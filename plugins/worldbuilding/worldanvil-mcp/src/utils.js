@@ -164,18 +164,51 @@ export function markdownToBBCode(text) {
 }
 
 /**
- * Convert all text fields in an object from Markdown to BBCode
+ * Field names whose values are code or identifiers, never prose.
+ * Running Markdown conversion on them corrupts them: `/* a *b* *\/` in CSS
+ * becomes `/[i] a [/i]...`, and `my_class_name` loses its underscores.
+ * Matches displayCss, displayPanelCss, cssClasses, displayJs, prepareJs, ...
+ */
+const RAW_FIELD_PATTERN = /css|classes|js$/i;
+
+/**
+ * Whether a field must always be sent verbatim (never Markdown-converted).
+ *
+ * @param {string} key - Field name
+ * @returns {boolean}
+ */
+export function isRawField(key) {
+  return typeof key === "string" && RAW_FIELD_PATTERN.test(key);
+}
+
+/**
+ * Convert a text value unless raw mode is on.
+ *
+ * @param {string} text - Markdown (or BBCode when raw)
+ * @param {boolean} [raw=false] - Send the text verbatim
+ * @returns {string}
+ */
+export function toBBCode(text, raw = false) {
+  return raw ? text : markdownToBBCode(text);
+}
+
+/**
+ * Convert all text fields in an object from Markdown to BBCode.
+ * CSS / class / JS fields (see isRawField) are always passed through
+ * verbatim; with raw=true nothing is converted.
  *
  * @param {Object} data - Object with string fields to convert
+ * @param {Object} [options]
+ * @param {boolean} [options.raw=false] - Skip conversion for every field
  * @returns {Object} New object with converted string fields
  */
-export function convertFieldsToBBCode(data) {
+export function convertFieldsToBBCode(data, { raw = false } = {}) {
   if (!data || typeof data !== "object") return data;
 
   const converted = { ...data };
 
   for (const [key, value] of Object.entries(converted)) {
-    if (typeof value === "string") {
+    if (typeof value === "string" && !raw && !isRawField(key)) {
       converted[key] = markdownToBBCode(value);
     }
   }

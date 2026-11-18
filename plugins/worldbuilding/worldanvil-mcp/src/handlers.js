@@ -4,7 +4,38 @@
  * Implementation of all tool call handlers.
  */
 
-import { markdownToBBCode, convertFieldsToBBCode } from "./utils.js";
+import {
+  markdownToBBCode,
+  convertFieldsToBBCode,
+  isRawField,
+  toBBCode,
+} from "./utils.js";
+
+/**
+ * World fields update_world may set. Prose/BBCode fields are Markdown-converted
+ * unless raw=true; CSS fields (isRawField) are always sent verbatim.
+ */
+export const WORLD_UPDATE_FIELDS = [
+  "title",
+  "subtitle",
+  "description",
+  "excerpt",
+  "displayCss",
+  "displayPanelCss",
+  "globalAnnouncement",
+  "globalHeader",
+  "globalFooter",
+  "globalSidebarFooter",
+  "globalArticleIntroduction",
+  "worldSidebarContent",
+  "homepageContent1",
+  "homepageContent2",
+  "homepageContent3",
+  "homepageContent4",
+];
+
+/** World fields that are plain text and must never be converted. */
+const WORLD_PLAIN_FIELDS = new Set(["title", "subtitle", "excerpt"]);
 
 /**
  * Create a successful response with JSON content
@@ -55,7 +86,16 @@ export async function handleToolCall(name, args, client) {
 
       case "worldanvil_update_world": {
         const data = {};
-        if (args.title !== undefined) data.title = args.title;
+        for (const key of WORLD_UPDATE_FIELDS) {
+          const value = args[key];
+          if (value === undefined) continue;
+          const verbatim =
+            args.raw === true ||
+            isRawField(key) ||
+            WORLD_PLAIN_FIELDS.has(key) ||
+            typeof value !== "string";
+          data[key] = verbatim ? value : markdownToBBCode(value);
+        }
         return jsonResponse(await client.updateWorld(args.world_id, data));
       }
 
@@ -80,10 +120,13 @@ export async function handleToolCall(name, args, client) {
         };
         if (args.template !== undefined) data.templateType = args.template;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, args.raw === true);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
-          Object.assign(data, convertFieldsToBBCode(args.fields));
+          Object.assign(
+            data,
+            convertFieldsToBBCode(args.fields, { raw: args.raw === true })
+          );
         }
         if (args.category_id) data.category = { id: args.category_id };
         return jsonResponse(await client.createArticle(data));
@@ -93,10 +136,13 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, args.raw === true);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
-          Object.assign(data, convertFieldsToBBCode(args.fields));
+          Object.assign(
+            data,
+            convertFieldsToBBCode(args.fields, { raw: args.raw === true })
+          );
         }
         if (args.category_id) data.category = { id: args.category_id };
         return jsonResponse(await client.updateArticle(args.article_id, data));

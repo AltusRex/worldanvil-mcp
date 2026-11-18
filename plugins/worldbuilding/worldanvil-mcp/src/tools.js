@@ -49,7 +49,8 @@ export function getToolDefinitions() {
     },
     {
       name: "worldanvil_update_world",
-      description: "Update an existing world in WorldAnvil",
+      description:
+        "Update an existing world in WorldAnvil, including its presentation: world CSS, global header/footer/announcement, sidebar and homepage sections. Only the fields you pass are changed. CSS fields are always sent verbatim; BBCode fields accept Markdown (auto-converted) unless raw=true. World CSS requires a membership tier that allows it. Read the current values with worldanvil_get_world first, since each field is replaced, not merged.",
       inputSchema: {
         type: "object",
         properties: {
@@ -60,6 +61,54 @@ export function getToolDefinitions() {
           title: {
             type: "string",
             description: "The new title of the world (optional)",
+          },
+          subtitle: { type: "string", description: "World subtitle (plain text)" },
+          description: {
+            type: "string",
+            description: "World description (Markdown auto-converted to BBCode unless raw)",
+          },
+          excerpt: { type: "string", description: "Short excerpt (plain text)" },
+          displayCss: {
+            type: "string",
+            description:
+              "World-wide custom CSS, sent verbatim (never converted). World Anvil scopes user CSS under .user-css.",
+          },
+          displayPanelCss: {
+            type: "string",
+            description: "Custom CSS for the world's panels, sent verbatim",
+          },
+          globalAnnouncement: {
+            type: "string",
+            description: "Announcement banner shown across the world (BBCode/Markdown)",
+          },
+          globalHeader: {
+            type: "string",
+            description: "Header content on every world page (BBCode/Markdown)",
+          },
+          globalFooter: {
+            type: "string",
+            description: "Footer content on every world page (BBCode/Markdown)",
+          },
+          globalSidebarFooter: {
+            type: "string",
+            description: "Content at the foot of the world sidebar (BBCode/Markdown)",
+          },
+          globalArticleIntroduction: {
+            type: "string",
+            description: "Introduction shown on every article (BBCode/Markdown)",
+          },
+          worldSidebarContent: {
+            type: "string",
+            description: "World sidebar content (BBCode/Markdown)",
+          },
+          homepageContent1: { type: "string", description: "Homepage section 1 (BBCode/Markdown)" },
+          homepageContent2: { type: "string", description: "Homepage section 2 (BBCode/Markdown)" },
+          homepageContent3: { type: "string", description: "Homepage section 3 (BBCode/Markdown)" },
+          homepageContent4: { type: "string", description: "Homepage section 4 (BBCode/Markdown)" },
+          raw: {
+            type: "boolean",
+            description:
+              "Send every text field verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts.",
           },
         },
         required: ["world_id"],
@@ -120,7 +169,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_create_article",
       description:
-        "Create a new article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields. Use the fields parameter to set template-specific fields like localization, manifestation, lawtype (for Law), anatomy, traits (for Species), seeded, authornotes, etc.",
+        "Create a new article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields (except CSS/class fields such as displayCss and cssClasses, which are always sent verbatim; pass raw=true to send everything verbatim). Use the fields parameter to set template-specific fields like localization, manifestation, lawtype (for Law), anatomy, traits (for Species), seeded, authornotes, etc.",
       inputSchema: {
         type: "object",
         properties: {
@@ -150,6 +199,11 @@ export function getToolDefinitions() {
               "Template-specific fields as key-value pairs. Markdown in all text fields is auto-converted to BBCode (e.g., manifestation, anatomy, seeded, authornotes, culture, etc.)",
             additionalProperties: true,
           },
+          raw: {
+            type: "boolean",
+            description:
+              "Send content and fields verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts. CSS/class fields (displayCss, cssClasses) are always sent verbatim regardless.",
+          },
           category_id: {
             type: "string",
             description:
@@ -162,7 +216,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_update_article",
       description:
-        "Update an existing article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields passed via the fields parameter.",
+        "Update an existing article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields passed via the fields parameter, except CSS/class fields (displayCss, cssClasses), which are always sent verbatim. Pass raw=true to send everything verbatim (for hand-written BBCode).",
       inputSchema: {
         type: "object",
         properties: {
@@ -189,6 +243,11 @@ export function getToolDefinitions() {
             description:
               "Template-specific fields to update as key-value pairs. Markdown in all text fields is auto-converted to BBCode.",
             additionalProperties: true,
+          },
+          raw: {
+            type: "boolean",
+            description:
+              "Send content and fields verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts. CSS/class fields (displayCss, cssClasses) are always sent verbatim regardless.",
           },
           category_id: {
             type: "string",
