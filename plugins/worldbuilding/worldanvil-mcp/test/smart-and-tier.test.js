@@ -111,6 +111,20 @@ describe("tier check", () => {
     expect(client.getWorld).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the membership object the API actually returns", async () => {
+    client.getWorld = vi.fn(async () => ({
+      id: "w",
+      ownerMembershipPrototype: { entityClass: "MembershipType", identifier: "master", title: "Master" },
+    }));
+    const res = await handleToolCall(
+      "worldanvil_update_world",
+      { world_id: "w", displayCss: ".a { b: c }" },
+      client,
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/"master"/);
+  });
+
   it("refuses timeline CSS below Grandmaster", async () => {
     const res = await handleToolCall(
       "worldanvil_update_timeline",

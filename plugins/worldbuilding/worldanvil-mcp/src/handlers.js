@@ -88,6 +88,22 @@ export function cssFieldsIn(obj) {
     .map(([k]) => k);
 }
 
+/**
+ * The API returns the owner's membership as an object
+ * ({ identifier: "grandmaster", title: "Grandmaster", ... }); accept a plain
+ * string too.
+ * @param {*} value
+ * @returns {string|null}
+ */
+export function membershipIdentifier(value) {
+  if (typeof value === "string") return value ? value.toLowerCase() : null;
+  if (value && typeof value === "object") {
+    const id = value.identifier || value.title;
+    return typeof id === "string" && id ? id.toLowerCase() : null;
+  }
+  return null;
+}
+
 async function lookupWorldTier(client, worldId) {
   const forced = String(process.env.WA_TIER || "auto").toLowerCase();
   if (forced === "off") return null;
@@ -97,8 +113,7 @@ async function lookupWorldTier(client, worldId) {
   let tier = null;
   try {
     const world = await client.getWorld(worldId);
-    const value = world && world.ownerMembershipPrototype;
-    tier = typeof value === "string" && value ? value.toLowerCase() : null;
+    tier = membershipIdentifier(world && world.ownerMembershipPrototype);
   } catch {
     tier = null; // fail open: World Anvil still enforces its own limits
   }
