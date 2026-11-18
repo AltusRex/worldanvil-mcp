@@ -11,7 +11,7 @@ This document provides guidance for AI agents working with the WorldAnvil MCP se
 │                                                                 │
 │  CONTENT CREATION                                               │
 │    Articles   → Full content pages (28 templates available)     │
-│    Variables  → Reusable values: [prefix:key]                   │
+│    Variables  → Reusable values: [var:prefix-key]               │
 │    Blocks     → RPG statblocks (monsters, spells, items)        │
 │                                                                 │
 │  ORGANIZATION                                                   │
@@ -83,10 +83,15 @@ GUIDE SECTIONS IN THIS DOCUMENT
 |------|------------------|----------------|----------|
 | **string** (Term, Simple) | Title shows; value = hover tooltip | No | Dictionary terms, abbreviations, quick definitions |
 | **string** (Term, Advanced) | Title shows; value = styled hover tooltip | Yes, in tooltip | Expanded explanations, mini-statblocks on hover |
-| **rendered** (Fragment) | Value replaces variable inline | Yes | Reusable banners, styled containers, announcements |
-| **link** | Creates clickable hyperlink | No | External URLs, social media, VTT links |
+| **string** (Snippet) | Title rendered inline as BBCode when the value is empty (max 225 chars) | Yes, in title | Short banners, badges, styled labels |
+| **text** | Title shows; value opens in a popup on click | Yes, in popup | Longer definitions |
 | **number** | Numeric value | No | Years, quantities, stats |
-| **json** | Structured data via API | N/A | Complex integrations |
+
+> **Tested on World Anvil, 2026-11-18.** Reference a variable as `[var:prefix-key]`,
+> with underscores removed from the key (`cal` + `current_year` → `[var:cal-currentyear]`).
+> Only `string`, `text` and `number` exist; any other type is saved as `string`.
+> What readers see is the variable's **title**, so set `title` when creating it.
+
 
 ### Collection Organization Strategy
 
@@ -140,9 +145,10 @@ Usage in articles: Authors manually replace {CONTENT}
 **Pattern 2: Consistent Announcements**
 ```
 Variable key: "wip_banner"
-Variable value: [container:wip][center][b]This article is a work in progress[/b][/center][/container]
+Variable title: [container:wip][center][b]This article is a work in progress[/b][/center][/container]
+Variable value: (empty)
 
-Usage: [frag:wip_banner] at top of draft articles
+Usage: [var:ui-wipbanner] at top of draft articles
 ```
 
 **Pattern 3: Reusable Navigation**
@@ -193,7 +199,7 @@ Run worldanvil_list_variables for the target collection
 ```
 - Use appropriate type for intended behavior
 - Keep key short but descriptive
-- Test the embed code: [prefix:key]
+- Test the embed code: [var:prefix-key]
 ```
 
 ## Common Use Cases
@@ -207,7 +213,7 @@ Variables:
   key: "arcanum"     title: "Arcanum"    value: "The raw magical energy..."
   key: "leyline"     title: "Ley Line"   value: "Invisible channels of..."
 
-Usage: "Wizards tap into the [def:arcanum] flowing through [def:leyline]s."
+Usage: "Wizards tap into the [var:def-arcanum] flowing through [var:def-leyline]s."
 Result: Hover tooltips provide definitions without cluttering the text
 ```
 

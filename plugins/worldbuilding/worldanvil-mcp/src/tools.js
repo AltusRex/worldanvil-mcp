@@ -9,7 +9,7 @@
  * @returns {Array} Array of tool definition objects
  */
 export function getToolDefinitions() {
-  return [
+  return addRawOption([
     // ===== IDENTITY & WORLDS =====
     {
       name: "worldanvil_get_identity",
@@ -105,6 +105,15 @@ export function getToolDefinitions() {
           homepageContent2: { type: "string", description: "Homepage section 2 (BBCode/Markdown)" },
           homepageContent3: { type: "string", description: "Homepage section 3 (BBCode/Markdown)" },
           homepageContent4: { type: "string", description: "Homepage section 4 (BBCode/Markdown)" },
+          copyright: {
+            type: "string",
+            description: "Copyright line at the bottom of every page (BBCode/Markdown)",
+          },
+          displayFak: {
+            type: "string",
+            description:
+              "Font Awesome kit id (plain text). Adds the kit's script to every world page",
+          },
           raw: {
             type: "boolean",
             description:
@@ -922,6 +931,11 @@ export function getToolDefinitions() {
             description: "Visibility state",
           },
           tags: { type: "string", description: "Comma-separated tags" },
+          displayCss: {
+            type: "string",
+            description:
+              "Timeline CSS, sent verbatim. Timeline pages don't load world CSS; target the .horae-* classes.",
+          },
           history_ids: {
             type: "array",
             items: { type: "string" },
@@ -1746,7 +1760,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_get_variablecollection",
       description:
-        "Get a variable collection by ID with its metadata and prefix. Use to inspect collection structure before creating variables. Collections organize reusable values referenced in articles as [prefix:key].",
+        "Get a variable collection by ID with its metadata and prefix. Use to inspect collection structure before creating variables. Collections organize reusable values referenced in articles as [var:prefix-key].",
       inputSchema: {
         type: "object",
         properties: {
@@ -1775,7 +1789,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_create_variablecollection",
       description:
-        'Create a new variable collection with a prefix for referencing. CRITICAL: The prefix CANNOT be changed later without breaking all references. Use 3-6 character lowercase prefixes (e.g., "lore", "cal", "npc", "term"). Variables will be accessed as [prefix:key] in articles.',
+        'Create a new variable collection with a prefix for referencing. CRITICAL: The prefix CANNOT be changed later without breaking all references. Use 3-6 character lowercase prefixes (e.g., "lore", "cal", "npc", "term"). Variables will be accessed as [var:prefix-key] in articles.',
       inputSchema: {
         type: "object",
         properties: {
@@ -1792,7 +1806,7 @@ export function getToolDefinitions() {
           prefix: {
             type: "string",
             description:
-              "PERMANENT: Short prefix for [prefix:key] syntax. Cannot change without breaking references.",
+              "PERMANENT: Short prefix for [var:prefix-key] syntax. Cannot change without breaking references.",
           },
         },
         required: ["title", "world_id"],
@@ -1801,7 +1815,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_update_variablecollection",
       description:
-        "Update collection title or description. WARNING: Changing prefix breaks ALL [prefix:key] references in articles - avoid unless absolutely necessary.",
+        "Update collection title or description. WARNING: Changing prefix breaks ALL [var:prefix-key] references in articles - avoid unless absolutely necessary.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1822,7 +1836,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_delete_variablecollection",
       description:
-        "Delete a collection AND ALL ITS VARIABLES. This is destructive and cannot be undone. All [prefix:key] references in articles will break. Consider updating variables instead.",
+        "Delete a collection AND ALL ITS VARIABLES. This is destructive and cannot be undone. All [var:prefix-key] references in articles will break. Consider updating variables instead.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1868,7 +1882,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_create_variable",
       description:
-        'Create a variable in a collection, referenced as [prefix:key] in articles. TYPE BEHAVIORS: "string" = title displays, value shows as HOVER TOOLTIP (for glossary/terms). "rendered" = value renders INLINE with BBCode support (for reusable formatted blocks). "link" = creates clickable hyperlink. "number" = numeric value. Use string for most cases.',
+        'Create a variable in a collection. Reference it in articles as [var:prefix-key], with underscores removed from the key (prefix "cal", key "month_name" → [var:cal-monthname]). Only three types exist (others are saved as "string"). "string": shows the TITLE; with a value, the value is a hover tooltip (glossary terms); with an empty value, the title is rendered as BBCode (short reusable snippets). "text": shows the title; the value opens in a popup on click. "number": shows the value as-is. Titles are limited to 225 characters. Values are sent as-is.',
       inputSchema: {
         type: "object",
         properties: {
@@ -1879,17 +1893,23 @@ export function getToolDefinitions() {
           k: {
             type: "string",
             description:
-              "Variable key (lowercase_snake_case, used in [prefix:key])",
+              'Variable key (lowercase; underscores are dropped in the reference, so "month_name" → [var:prefix-monthname])',
           },
           type: {
             type: "string",
+            enum: ["string", "text", "number"],
             description:
-              '"string" (hover tooltip), "rendered" (inline BBCode), "link" (hyperlink), "number", "json"',
+              '"string" (title shown; value = tooltip, or empty value = title rendered as BBCode), "text" (title shown; value in a click popup), "number" (value shown)',
+          },
+          title: {
+            type: "string",
+            description:
+              "What readers see for string and text variables (BBCode allowed, max 225 characters). Without a title a string or text variable renders empty.",
           },
           v: {
             type: "string",
             description:
-              "Value - for string type this is the tooltip text; for rendered type this is BBCode that replaces the variable",
+              "Value: tooltip text (string), popup text (text), or the number (number). May be empty for a string variable used as a BBCode snippet.",
           },
           world_id: { type: "string", description: "World ID" },
         },
@@ -1899,7 +1919,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_update_variable",
       description:
-        "Update a variable's value (safe) or key (breaks references). PREFER updating value over deleting - keeps references working. WARNING: Changing key breaks existing [prefix:oldkey] references.",
+        "Update a variable's value (safe) or key (breaks references). PREFER updating value over deleting - keeps references working. WARNING: Changing key breaks existing [var:prefix-oldkey] references.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1909,7 +1929,15 @@ export function getToolDefinitions() {
             description: "New key - DANGER: breaks existing references",
           },
           v: { type: "string", description: "New value - safe to change" },
-          type: { type: "string", description: "New type" },
+          title: {
+            type: "string",
+            description: "New title (what readers see; BBCode allowed, max 225 characters)",
+          },
+          type: {
+            type: "string",
+            enum: ["string", "text", "number"],
+            description: "New type",
+          },
         },
         required: ["variable_id"],
       },
@@ -1917,7 +1945,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_delete_variable",
       description:
-        "Delete a variable. All [prefix:key] references will break. PREFER updating the value to empty/placeholder instead - preserves reference structure for future use.",
+        "Delete a variable. All [var:prefix-key] references will break. PREFER updating the value to empty/placeholder instead - preserves reference structure for future use.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2756,5 +2784,45 @@ export function getToolDefinitions() {
         required: ["plot_id"],
       },
     },
-  ];
+  ]);
+}
+
+/**
+ * Tools (besides create/update_article and update_world, which define raw
+ * themselves) whose text is Markdown-converted unless raw is set.
+ */
+export const RAW_CAPABLE_TOOLS = new Set([
+  "worldanvil_create_category",
+  "worldanvil_update_category",
+  "worldanvil_create_note",
+  "worldanvil_update_note",
+  "worldanvil_create_secret",
+  "worldanvil_update_secret",
+  "worldanvil_create_history",
+  "worldanvil_update_history",
+  "worldanvil_update_block",
+  "worldanvil_create_manuscriptpart",
+  "worldanvil_update_manuscriptpart",
+  "worldanvil_create_manuscriptbeat",
+  "worldanvil_update_manuscriptbeat",
+]);
+
+const RAW_PROPERTY = {
+  type: "boolean",
+  description:
+    "Send text verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode. Setting WA_MARKDOWN=off makes this the default for every call.",
+};
+
+function addRawOption(tools) {
+  return tools.map((tool) =>
+    RAW_CAPABLE_TOOLS.has(tool.name) && !tool.inputSchema.properties.raw
+      ? {
+          ...tool,
+          inputSchema: {
+            ...tool.inputSchema,
+            properties: { ...tool.inputSchema.properties, raw: RAW_PROPERTY },
+          },
+        }
+      : tool,
+  );
 }

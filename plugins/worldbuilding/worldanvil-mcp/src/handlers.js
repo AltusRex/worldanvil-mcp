@@ -5,7 +5,6 @@
  */
 
 import {
-  markdownToBBCode,
   convertFieldsToBBCode,
   isRawField,
   toBBCode,
@@ -32,10 +31,22 @@ export const WORLD_UPDATE_FIELDS = [
   "homepageContent2",
   "homepageContent3",
   "homepageContent4",
+  "copyright",
+  "displayFak",
 ];
 
+/**
+ * Whether Markdown conversion is off for this call.
+ * @param {Object} args - Tool arguments
+ * @returns {boolean}
+ */
+export function isRaw(args) {
+  if (args && args.raw === true) return true;
+  return String(process.env.WA_MARKDOWN || "").toLowerCase() === "off";
+}
+
 /** World fields that are plain text and must never be converted. */
-const WORLD_PLAIN_FIELDS = new Set(["title", "subtitle", "excerpt"]);
+const WORLD_PLAIN_FIELDS = new Set(["title", "subtitle", "excerpt", "displayFak"]);
 
 /**
  * Create a successful response with JSON content
@@ -69,6 +80,10 @@ function errorResponse(error) {
  * @returns {Promise<Object>} MCP tool response
  */
 export async function handleToolCall(name, args, client) {
+  // raw: true on a call, or WA_MARKDOWN=off for every call, sends text
+  // verbatim (no Markdown-to-BBCode conversion).
+  const raw = isRaw(args);
+
   try {
     switch (name) {
       // ===== IDENTITY & WORLDS =====
@@ -90,11 +105,11 @@ export async function handleToolCall(name, args, client) {
           const value = args[key];
           if (value === undefined) continue;
           const verbatim =
-            args.raw === true ||
+            raw ||
             isRawField(key) ||
             WORLD_PLAIN_FIELDS.has(key) ||
             typeof value !== "string";
-          data[key] = verbatim ? value : markdownToBBCode(value);
+          data[key] = verbatim ? value : toBBCode(value, raw);
         }
         return jsonResponse(await client.updateWorld(args.world_id, data));
       }
@@ -120,12 +135,12 @@ export async function handleToolCall(name, args, client) {
         };
         if (args.template !== undefined) data.templateType = args.template;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, args.raw === true);
+          data.content = toBBCode(args.content, raw);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
           Object.assign(
             data,
-            convertFieldsToBBCode(args.fields, { raw: args.raw === true })
+            convertFieldsToBBCode(args.fields, { raw: raw })
           );
         }
         if (args.category_id) data.category = { id: args.category_id };
@@ -136,12 +151,12 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, args.raw === true);
+          data.content = toBBCode(args.content, raw);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
           Object.assign(
             data,
-            convertFieldsToBBCode(args.fields, { raw: args.raw === true })
+            convertFieldsToBBCode(args.fields, { raw: raw })
           );
         }
         if (args.category_id) data.category = { id: args.category_id };
@@ -171,7 +186,7 @@ export async function handleToolCall(name, args, client) {
         };
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.description !== undefined)
-          data.description = markdownToBBCode(args.description);
+          data.description = toBBCode(args.description, raw);
         // Field name is `parent` per WA API GET response shape, not `parentCategory`.
         // Discovered 2026-04-25 when category reparenting silently no-op'd.
         if (args.parent_category_id)
@@ -187,9 +202,9 @@ export async function handleToolCall(name, args, client) {
         // `custom1` (column layout). `content` writes custom1 for back-compat;
         // `description` targets the legacy field directly. Pass empty string to clear.
         if (args.content !== undefined)
-          data.custom1 = markdownToBBCode(args.content);
+          data.custom1 = toBBCode(args.content, raw);
         if (args.description !== undefined)
-          data.description = markdownToBBCode(args.description);
+          data.description = toBBCode(args.description, raw);
         if (args.excerpt !== undefined) data.excerpt = args.excerpt;
         // Field name is `parent` per WA API GET response shape, not `parentCategory`.
         // Discovered 2026-04-25 when category reparenting silently no-op'd.
@@ -292,7 +307,7 @@ export async function handleToolCall(name, args, client) {
           await client.createNote({
             title: args.title,
             notesection: { id: args.notesection_id },
-            content: markdownToBBCode(args.content),
+            content: toBBCode(args.content, raw),
             type: "default", // Required but undocumented field
           }),
         );
@@ -301,7 +316,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(await client.updateNote(args.note_id, data));
       }
 
@@ -326,7 +341,7 @@ export async function handleToolCall(name, args, client) {
           world: { id: args.world_id },
         };
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         if (args.article_id) data.article = { id: args.article_id };
         return jsonResponse(await client.createSecret(data));
       }
@@ -335,7 +350,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         if (args.article_id) data.article = { id: args.article_id };
         return jsonResponse(await client.updateSecret(args.secret_id, data));
       }
@@ -464,6 +479,7 @@ export async function handleToolCall(name, args, client) {
       case "worldanvil_update_timeline": {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
+        if (args.displayCss !== undefined) data.displayCss = args.displayCss;
         if (args.description !== undefined) data.description = args.description;
         if (args.type !== undefined) data.type = args.type;
         if (args.state !== undefined) data.state = args.state;
@@ -540,7 +556,7 @@ export async function handleToolCall(name, args, client) {
         // fullcontent is the full body and does support BBCode
         if (args.content !== undefined) data.content = args.content;
         if (args.fullcontent !== undefined)
-          data.fullcontent = markdownToBBCode(args.fullcontent);
+          data.fullcontent = toBBCode(args.fullcontent, raw);
         if (args.displayDateName !== undefined)
           data.displayDateName = args.displayDateName;
         if (args.displayRange !== undefined)
@@ -585,7 +601,7 @@ export async function handleToolCall(name, args, client) {
         // fullcontent is the full body and does support BBCode
         if (args.content !== undefined) data.content = args.content;
         if (args.fullcontent !== undefined)
-          data.fullcontent = markdownToBBCode(args.fullcontent);
+          data.fullcontent = toBBCode(args.fullcontent, raw);
         if (args.displayDateName !== undefined)
           data.displayDateName = args.displayDateName;
         if (args.displayRange !== undefined)
@@ -658,7 +674,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(await client.updateBlock(args.block_id, data));
       }
 
@@ -934,6 +950,7 @@ export async function handleToolCall(name, args, client) {
           v: args.v,
           world: { id: args.world_id },
         };
+        if (args.title !== undefined) data.title = args.title;
         return jsonResponse(await client.createVariable(data));
       }
 
@@ -942,6 +959,7 @@ export async function handleToolCall(name, args, client) {
         if (args.k !== undefined) data.k = args.k;
         if (args.v !== undefined) data.v = args.v;
         if (args.type !== undefined) data.type = args.type;
+        if (args.title !== undefined) data.title = args.title;
         return jsonResponse(
           await client.updateVariable(args.variable_id, data),
         );
@@ -1122,7 +1140,7 @@ export async function handleToolCall(name, args, client) {
           manuscriptVersion: { id: args.version_id },
         };
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(await client.createManuscriptPart(data));
       }
 
@@ -1130,7 +1148,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(
           await client.updateManuscriptPart(args.part_id, data),
         );
@@ -1157,7 +1175,7 @@ export async function handleToolCall(name, args, client) {
           manuscriptPart: { id: args.part_id },
         };
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(await client.createManuscriptBeat(data));
       }
 
@@ -1165,7 +1183,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = markdownToBBCode(args.content);
+          data.content = toBBCode(args.content, raw);
         return jsonResponse(
           await client.updateManuscriptBeat(args.beat_id, data),
         );

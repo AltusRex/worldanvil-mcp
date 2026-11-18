@@ -376,7 +376,7 @@ Create an article with:
 
 ## Variables Best Practices
 
-Variables are reusable values referenced throughout your world using `[prefix:key]` syntax. They're ideal for content that appears in multiple articles but doesn't warrant its own article page.
+Variables are reusable values referenced throughout your world using `[var:prefix-key]` syntax. They're ideal for content that appears in multiple articles but doesn't warrant its own article page.
 
 > **Community Principle:** "Better to have too many collections than too few"
 
@@ -394,25 +394,29 @@ Variables are reusable values referenced throughout your world using `[prefix:ke
 
 Understanding how each type *displays* is critical:
 
-| Type | Display Behavior | Best For |
-|------|------------------|----------|
-| `string` | Title shows; value = **hover tooltip** | Glossary terms, abbreviations, quick definitions |
-| `rendered` | Value **replaces variable inline** (supports BBCode) | Reusable banners, styled containers, announcements |
-| `link` | Creates clickable hyperlink | External URLs, social media, VTT links |
-| `number` | Numeric value | Years, quantities, stats |
-| `json` | Structured data via API | Advanced integrations |
+> **Tested on World Anvil, 2026-11-18.** Reference a variable as `[var:prefix-key]`,
+> with underscores removed from the key (`cal` + `current_year` → `[var:cal-currentyear]`).
+> Only `string`, `text` and `number` exist; any other type is saved as `string`.
+> What readers see is the variable's **title**, so set `title` when creating it.
+
+| Type | Title | Value | Display | Best For |
+|------|-------|-------|---------|----------|
+| `string` | set | set | Title shown, value as **hover tooltip** | Glossary terms, abbreviations |
+| `string` | set (BBCode) | empty | Title **rendered inline as BBCode** (max 225 chars) | Short reusable banners, badges, styled labels |
+| `text` | set | set | Title shown, value opens in a **popup on click** | Longer definitions |
+| `number` | – | number | Value shown as-is | Years, quantities, stats |
 
 **Example - String (Tooltip):**
 ```
 Key: "arcanum"  Title: "Arcanum"  Value: "The raw magical energy..."
-Usage: "Wizards tap into the [def:arcanum]..."
+Usage: "Wizards tap into the [var:def-arcanum]..."
 Result: Hover over "Arcanum" shows tooltip with definition
 ```
 
-**Example - Rendered (Inline):**
+**Example - BBCode snippet (string with empty value):**
 ```
-Key: "wip_banner"  Value: "[container:wip][b]Work in Progress[/b][/container]"
-Usage: "[frag:wip_banner]" at top of draft articles
+Key: "wip_banner"  Title: "[container:wip][b]Work in Progress[/b][/container]"  Value: ""
+Usage: "[var:ui-wipbanner]" at top of draft articles
 Result: Styled banner appears inline in the article
 ```
 
@@ -422,10 +426,10 @@ Organize by theme, not by size:
 
 ```
 GOOD (Granular by theme):
-├── "Calendar & Time"      prefix: "cal"   → [cal:current_year], [cal:era]
-├── "Currency"             prefix: "coin"  → [coin:gold], [coin:silver]
-├── "Noble Titles"         prefix: "title" → [title:king], [title:duke]
-└── "Common Terms"         prefix: "term"  → [term:magic], [term:religion]
+├── "Calendar & Time"      prefix: "cal"   → [var:cal-currentyear], [var:cal-era]
+├── "Currency"             prefix: "coin"  → [var:coin-gold], [var:coin-silver]
+├── "Noble Titles"         prefix: "title" → [var:title-king], [var:title-duke]
+└── "Common Terms"         prefix: "term"  → [var:term-magic], [var:term-religion]
 
 BAD (Catch-all):
 └── "World Stuff"          prefix: "world" → Everything mixed together
@@ -458,10 +462,11 @@ Keys:      lowercase_snake_case, SHORT
 3. **When creating variables:**
    - Choose type based on desired display behavior
    - Use `string` for most cases (tooltip behavior)
-   - Use `rendered` only for BBCode/styled content
+   - Always set `title`: it is what readers see
+   - For a BBCode snippet, use `string` with the BBCode in `title` and an empty value
 
 4. **Avoid destructive changes:**
-   - Changing key → breaks all `[prefix:oldkey]` references
+   - Changing key → breaks all `[var:prefix-oldkey]` references
    - Changing prefix → breaks ALL variables in collection
    - Deleting collection → deletes ALL its variables
    - **PREFER updating value over deleting**
@@ -477,7 +482,7 @@ Usage: Natural reading with hover definitions
 
 **Styled Containers:**
 ```
-Collection: "UI Elements"  Prefix: "ui"  Type: rendered
+Collection: "UI Elements"  Prefix: "ui"  Type: string, BBCode in title, empty value
 Variables: warning_box, info_panel, quote_block...
 Usage: Consistent styling across all articles
 ```

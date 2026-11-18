@@ -46,6 +46,7 @@ Tests load credentials from `.env` in the package directory (use `dotenv`). Inte
 | `WA_AUTH_TOKEN` | Always | User's WorldAnvil auth token |
 | `WA_APP_KEY` | Optional | Direct API mode; if omitted, uses default public proxy |
 | `WA_PROXY_URL` | Optional | Custom Cloudflare Worker proxy URL |
+| `WA_MARKDOWN` | Optional | `off` sends all text verbatim (no Markdown→BBCode conversion), like passing `raw: true` on every call |
 | `WA_TOOL_GROUPS` | Optional | Comma-separated tool groups or preset to load (default: all). Groups: core, content, images, campaign, maps, timeline, blocks, manuscripts, canvas, variables, social, rpg. Presets: all, standard, worldbuilding, writing, gamemaster |
 
 ## Architecture
@@ -61,7 +62,7 @@ Tests load credentials from `.env` in the package directory (use `dotenv`). Inte
 2. `handlers.js` — add a `case` in the switch statement
 3. `api-client.js` — add the HTTP method on `WorldAnvilClient`
 
-**Markdown→BBCode**: Article `content` fields and other text fields are automatically converted via `markdownToBBCode()` in `utils.js`. The function is called in handlers before sending to the API. WorldAnvil does not render Markdown natively.
+**Markdown→BBCode**: Article `content` fields and other text fields are automatically converted via `markdownToBBCode()` in `utils.js`. The function is called in handlers before sending to the API. WorldAnvil does not render Markdown natively. CSS, class and JS fields (`isRawField`) are never converted. Every converting tool takes `raw: true` to send text verbatim, and `WA_MARKDOWN=off` makes that the default.
 
 **Known API quirks** (discovered through testing, documented in `api-client.js`):
 - Swagger shows `/variable_collection` but the live API uses `/variablecollection`
