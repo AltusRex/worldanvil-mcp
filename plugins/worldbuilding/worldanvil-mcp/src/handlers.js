@@ -5,6 +5,7 @@
  */
 
 import {
+  conversionMode,
   convertFieldsToBBCode,
   isRawField,
   toBBCode,
@@ -41,12 +42,112 @@ export const WORLD_UPDATE_FIELDS = [
  * @returns {boolean}
  */
 export function isRaw(args) {
-  if (args && args.raw === true) return true;
-  return String(process.env.WA_MARKDOWN || "").toLowerCase() === "off";
+  return conversionMode(args) === "raw";
 }
 
 /** World fields that are plain text and must never be converted. */
 const WORLD_PLAIN_FIELDS = new Set(["title", "subtitle", "excerpt", "displayFak"]);
+
+// ===== MEMBERSHIP TIER CHECK =====
+// World Anvil allows custom CSS from Grandmaster up. Below that the API
+// refuses or silently drops CSS, so the server stops the write first and
+// says why. The tier is the world owner's (ownerMembershipPrototype on the
+// world), looked up once per world. WA_TIER overrides it: auto (default),
+// off (no check), or a tier name such as master to simulate that tier.
+
+/** Tiers that may save custom CSS. */
+export const CSS_TIERS = new Set(["grandmaster", "sage"]);
+/** Tiers known to be below CSS access. Unknown tier names are allowed. */
+export const BELOW_CSS_TIERS = new Set([
+  "freeman",
+  "free",
+  "journeyman",
+  "guild",
+  "adventurer",
+  "master",
+]);
+
+const worldTierCache = new Map();
+const parentWorldCache = new Map();
+
+/** Clear cached tiers (tests, or after a membership change). */
+export function resetTierCache() {
+  worldTierCache.clear();
+  parentWorldCache.clear();
+}
+
+/**
+ * Names of non-empty CSS fields in an object.
+ * @param {Object} obj
+ * @returns {string[]}
+ */
+export function cssFieldsIn(obj) {
+  if (!obj || typeof obj !== "object") return [];
+  return Object.entries(obj)
+    .filter(([k, v]) => /css/i.test(k) && typeof v === "string" && v.trim() !== "")
+    .map(([k]) => k);
+}
+
+async function lookupWorldTier(client, worldId) {
+  const forced = String(process.env.WA_TIER || "auto").toLowerCase();
+  if (forced === "off") return null;
+  if (forced !== "auto") return forced;
+  if (!worldId || typeof client.getWorld !== "function") return null;
+  if (worldTierCache.has(worldId)) return worldTierCache.get(worldId);
+  let tier = null;
+  try {
+    const world = await client.getWorld(worldId);
+    const value = world && world.ownerMembershipPrototype;
+    tier = typeof value === "string" && value ? value.toLowerCase() : null;
+  } catch {
+    tier = null; // fail open: World Anvil still enforces its own limits
+  }
+  worldTierCache.set(worldId, tier);
+  return tier;
+}
+
+async function lookupParentWorld(client, kind, id) {
+  const key = `${kind}:${id}`;
+  if (parentWorldCache.has(key)) return parentWorldCache.get(key);
+  const getter = kind === "article" ? client.getArticle : client.getTimeline;
+  let worldId = null;
+  if (id && typeof getter === "function") {
+    try {
+      const entity = await getter.call(client, id);
+      worldId = (entity && entity.world && entity.world.id) || null;
+    } catch {
+      worldId = null;
+    }
+  }
+  parentWorldCache.set(key, worldId);
+  return worldId;
+}
+
+/**
+ * Throw if the payload holds CSS and the world's tier can't save CSS.
+ * @param {Object} client
+ * @param {Object} payload - Data about to be sent
+ * @param {{worldId?: string, article?: string, timeline?: string}} target
+ */
+async function assertCssAllowed(client, payload, target) {
+  const fields = cssFieldsIn(payload);
+  if (fields.length === 0) return;
+  const forced = String(process.env.WA_TIER || "auto").toLowerCase();
+  if (forced === "off") return;
+  let worldId = target.worldId;
+  if (!worldId && forced === "auto") {
+    if (target.article) worldId = await lookupParentWorld(client, "article", target.article);
+    if (target.timeline) worldId = await lookupParentWorld(client, "timeline", target.timeline);
+  }
+  const tier = await lookupWorldTier(client, worldId);
+  if (tier && BELOW_CSS_TIERS.has(tier)) {
+    throw new Error(
+      `Custom CSS (${fields.join(", ")}) needs a Grandmaster or Sage membership, ` +
+        `and this world's owner is on "${tier}". Nothing was saved. ` +
+        "Send the other fields without the CSS, or set WA_TIER if the detected tier is wrong.",
+    );
+  }
+}
 
 /**
  * Create a successful response with JSON content
@@ -80,9 +181,10 @@ function errorResponse(error) {
  * @returns {Promise<Object>} MCP tool response
  */
 export async function handleToolCall(name, args, client) {
-  // raw: true on a call, or WA_MARKDOWN=off for every call, sends text
-  // verbatim (no Markdown-to-BBCode conversion).
-  const raw = isRaw(args);
+  // "auto" (default): convert Markdown, keep BBCode/HTML/CSS as given.
+  // raw: true → never convert; raw: false → always convert;
+  // WA_MARKDOWN=off|on|auto sets the default.
+  const mode = conversionMode(args);
 
   try {
     switch (name) {
@@ -105,12 +207,13 @@ export async function handleToolCall(name, args, client) {
           const value = args[key];
           if (value === undefined) continue;
           const verbatim =
-            raw ||
+            mode === "raw" ||
             isRawField(key) ||
             WORLD_PLAIN_FIELDS.has(key) ||
             typeof value !== "string";
-          data[key] = verbatim ? value : toBBCode(value, raw);
+          data[key] = verbatim ? value : toBBCode(value, mode);
         }
+        await assertCssAllowed(client, data, { worldId: args.world_id });
         return jsonResponse(await client.updateWorld(args.world_id, data));
       }
 
@@ -135,15 +238,16 @@ export async function handleToolCall(name, args, client) {
         };
         if (args.template !== undefined) data.templateType = args.template;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
           Object.assign(
             data,
-            convertFieldsToBBCode(args.fields, { raw: raw })
+            convertFieldsToBBCode(args.fields, { mode })
           );
         }
         if (args.category_id) data.category = { id: args.category_id };
+        await assertCssAllowed(client, data, { worldId: args.world_id });
         return jsonResponse(await client.createArticle(data));
       }
 
@@ -151,15 +255,16 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.fields !== undefined && typeof args.fields === "object") {
           Object.assign(
             data,
-            convertFieldsToBBCode(args.fields, { raw: raw })
+            convertFieldsToBBCode(args.fields, { mode })
           );
         }
         if (args.category_id) data.category = { id: args.category_id };
+        await assertCssAllowed(client, data, { article: args.article_id });
         return jsonResponse(await client.updateArticle(args.article_id, data));
       }
 
@@ -186,7 +291,7 @@ export async function handleToolCall(name, args, client) {
         };
         if (args.icon !== undefined) data.icon = args.icon;
         if (args.description !== undefined)
-          data.description = toBBCode(args.description, raw);
+          data.description = toBBCode(args.description, mode);
         // Field name is `parent` per WA API GET response shape, not `parentCategory`.
         // Discovered 2026-04-25 when category reparenting silently no-op'd.
         if (args.parent_category_id)
@@ -202,9 +307,9 @@ export async function handleToolCall(name, args, client) {
         // `custom1` (column layout). `content` writes custom1 for back-compat;
         // `description` targets the legacy field directly. Pass empty string to clear.
         if (args.content !== undefined)
-          data.custom1 = toBBCode(args.content, raw);
+          data.custom1 = toBBCode(args.content, mode);
         if (args.description !== undefined)
-          data.description = toBBCode(args.description, raw);
+          data.description = toBBCode(args.description, mode);
         if (args.excerpt !== undefined) data.excerpt = args.excerpt;
         // Field name is `parent` per WA API GET response shape, not `parentCategory`.
         // Discovered 2026-04-25 when category reparenting silently no-op'd.
@@ -307,7 +412,7 @@ export async function handleToolCall(name, args, client) {
           await client.createNote({
             title: args.title,
             notesection: { id: args.notesection_id },
-            content: toBBCode(args.content, raw),
+            content: toBBCode(args.content, mode),
             type: "default", // Required but undocumented field
           }),
         );
@@ -316,7 +421,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(await client.updateNote(args.note_id, data));
       }
 
@@ -341,7 +446,7 @@ export async function handleToolCall(name, args, client) {
           world: { id: args.world_id },
         };
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         if (args.article_id) data.article = { id: args.article_id };
         return jsonResponse(await client.createSecret(data));
       }
@@ -350,7 +455,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         if (args.article_id) data.article = { id: args.article_id };
         return jsonResponse(await client.updateSecret(args.secret_id, data));
       }
@@ -486,6 +591,7 @@ export async function handleToolCall(name, args, client) {
         if (args.tags !== undefined) data.tags = args.tags;
         if (args.history_ids !== undefined)
           data.histories = args.history_ids.map((id) => ({ id }));
+        await assertCssAllowed(client, data, { timeline: args.timeline_id });
         return jsonResponse(
           await client.updateTimeline(args.timeline_id, data),
         );
@@ -556,7 +662,7 @@ export async function handleToolCall(name, args, client) {
         // fullcontent is the full body and does support BBCode
         if (args.content !== undefined) data.content = args.content;
         if (args.fullcontent !== undefined)
-          data.fullcontent = toBBCode(args.fullcontent, raw);
+          data.fullcontent = toBBCode(args.fullcontent, mode);
         if (args.displayDateName !== undefined)
           data.displayDateName = args.displayDateName;
         if (args.displayRange !== undefined)
@@ -601,7 +707,7 @@ export async function handleToolCall(name, args, client) {
         // fullcontent is the full body and does support BBCode
         if (args.content !== undefined) data.content = args.content;
         if (args.fullcontent !== undefined)
-          data.fullcontent = toBBCode(args.fullcontent, raw);
+          data.fullcontent = toBBCode(args.fullcontent, mode);
         if (args.displayDateName !== undefined)
           data.displayDateName = args.displayDateName;
         if (args.displayRange !== undefined)
@@ -674,7 +780,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(await client.updateBlock(args.block_id, data));
       }
 
@@ -1140,7 +1246,7 @@ export async function handleToolCall(name, args, client) {
           manuscriptVersion: { id: args.version_id },
         };
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(await client.createManuscriptPart(data));
       }
 
@@ -1148,7 +1254,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(
           await client.updateManuscriptPart(args.part_id, data),
         );
@@ -1175,7 +1281,7 @@ export async function handleToolCall(name, args, client) {
           manuscriptPart: { id: args.part_id },
         };
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(await client.createManuscriptBeat(data));
       }
 
@@ -1183,7 +1289,7 @@ export async function handleToolCall(name, args, client) {
         const data = {};
         if (args.title !== undefined) data.title = args.title;
         if (args.content !== undefined)
-          data.content = toBBCode(args.content, raw);
+          data.content = toBBCode(args.content, mode);
         return jsonResponse(
           await client.updateManuscriptBeat(args.beat_id, data),
         );

@@ -182,14 +182,66 @@ export function isRawField(key) {
 }
 
 /**
- * Convert a text value unless raw mode is on.
+ * Signals that text is already in a format World Anvil stores as-is, so
+ * Markdown conversion would only damage it. @-mentions and --Key::Value--
+ * are left out on purpose: the converter already preserves them, and
+ * Markdown written by an assistant often contains them.
+ */
+const BBCODE_TAG =
+  /\[\/?(?:b|i|u|s|h[1-6]|p|br|hr|url|img|container|section|row|col\\d*|quote|ul|ol|li|table|tr|td|th|center|left|right|justify|code|spoiler|aloud|sup|sub|small|large|mark|redacted|tooltip|var|history|timeline|secret|map|block|article|category|indent|youtube|vimeo|nocode|sidebar|dice|dc|color|in|noparse|articleblock|blocklink|world|familytree|manuscript|diplomacy|book)(?=[\]:=|\s])/i;
+const HTML_TAG = /<\/?[a-z][a-z0-9-]*(?:\s[^<>]*)?\/?>/i;
+// A rule: a selector (with . # : @ * or [ in it, or a bare tag list) at the
+// start of a line or after a block, then { property: ...
+const CSS_RULE =
+  /(?:^|[{};])\s*(?:[^{};\n]*[.#:@*[][^{};\n]*|[a-z][a-z0-9-]*(?:\s*,\s*[a-z][a-z0-9-]*)*)\s*\{\s*(?:--)?[-a-z]+\s*:/im;
+
+/**
+ * Guess what kind of text this is.
  *
- * @param {string} text - Markdown (or BBCode when raw)
- * @param {boolean} [raw=false] - Send the text verbatim
+ * @param {string} text
+ * @returns {"bbcode"|"html"|"css"|"markdown"} "markdown" also covers plain text
+ */
+export function detectFormat(text) {
+  if (typeof text !== "string" || text === "") return "markdown";
+  if (BBCODE_TAG.test(text)) return "bbcode";
+  if (HTML_TAG.test(text)) return "html";
+  if (CSS_RULE.test(text)) return "css";
+  return "markdown";
+}
+
+/**
+ * Conversion modes:
+ *  - "auto"    (default) convert Markdown and plain text; keep text that
+ *              already contains BBCode, HTML or CSS exactly as given
+ *  - "convert" always convert (the original behaviour)
+ *  - "raw"     never convert
+ *
+ * @param {Object} args - Tool arguments (raw: true → raw, raw: false → convert)
+ * @returns {"auto"|"convert"|"raw"}
+ */
+export function conversionMode(args) {
+  if (args && args.raw === true) return "raw";
+  if (args && args.raw === false) return "convert";
+  const env = String(process.env.WA_MARKDOWN || "auto").toLowerCase();
+  if (env === "off" || env === "raw") return "raw";
+  if (env === "on" || env === "always" || env === "convert") return "convert";
+  return "auto";
+}
+
+/**
+ * Convert a text value according to the mode.
+ *
+ * @param {string} text - Markdown, BBCode, HTML or CSS
+ * @param {"auto"|"convert"|"raw"|boolean} [mode="auto"] - true means raw,
+ *   false means convert (kept for callers that pass a boolean)
  * @returns {string}
  */
-export function toBBCode(text, raw = false) {
-  return raw ? text : markdownToBBCode(text);
+export function toBBCode(text, mode = "auto") {
+  if (mode === true) mode = "raw";
+  if (mode === false) mode = "convert";
+  if (mode === "raw" || typeof text !== "string") return text;
+  if (mode === "auto" && detectFormat(text) !== "markdown") return text;
+  return markdownToBBCode(text);
 }
 
 /**
@@ -200,16 +252,18 @@ export function toBBCode(text, raw = false) {
  * @param {Object} data - Object with string fields to convert
  * @param {Object} [options]
  * @param {boolean} [options.raw=false] - Skip conversion for every field
+ * @param {string} [options.mode] - "auto", "convert" or "raw" (overrides raw)
  * @returns {Object} New object with converted string fields
  */
-export function convertFieldsToBBCode(data, { raw = false } = {}) {
+export function convertFieldsToBBCode(data, { raw = false, mode } = {}) {
   if (!data || typeof data !== "object") return data;
 
+  const effective = mode || (raw ? "raw" : "auto");
   const converted = { ...data };
 
   for (const [key, value] of Object.entries(converted)) {
-    if (typeof value === "string" && !raw && !isRawField(key)) {
-      converted[key] = markdownToBBCode(value);
+    if (typeof value === "string" && !isRawField(key)) {
+      converted[key] = toBBCode(value, effective);
     }
   }
 

@@ -187,6 +187,17 @@ The MCP chooses its mode based on what's configured:
 | Not set | Set | Custom Proxy (routes through your Worker) |
 | Not set | Not set | Default Proxy (routes through `worldanvil-proxy.wlcarden.workers.dev`) |
 
+## Formatting and CSS
+
+**Smart conversion.** World Anvil stores BBCode, not Markdown. By default (`WA_MARKDOWN=auto`) the server converts text that is Markdown or plain prose, and keeps text that already contains BBCode tags, HTML or CSS exactly as given. CSS and class fields (`displayCss`, `cssClasses`, ...) are never converted. Override per call with `raw: true` (send verbatim) or `raw: false` (always convert), or set `WA_MARKDOWN=off` or `on` for every call.
+
+**Membership check for CSS.** Custom CSS needs a Grandmaster or Sage membership. Before a write that includes CSS (world, article or timeline), the server reads the world owner's membership once and refuses the CSS below Grandmaster with a clear message, instead of letting it be dropped. `WA_TIER=off` disables the check; `WA_TIER=master` (or another tier name) simulates that tier for testing.
+
+| Variable | Values | Default |
+|----------|--------|---------|
+| `WA_MARKDOWN` | `auto`, `off`, `on` | `auto` |
+| `WA_TIER` | `auto`, `off`, or a tier name | `auto` |
+
 ## Available Tools
 
 ### Identity & Worlds

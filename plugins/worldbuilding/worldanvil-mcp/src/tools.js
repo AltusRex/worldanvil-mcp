@@ -50,7 +50,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_update_world",
       description:
-        "Update an existing world in WorldAnvil, including its presentation: world CSS, global header/footer/announcement, sidebar and homepage sections. Only the fields you pass are changed. CSS fields are always sent verbatim; BBCode fields accept Markdown (auto-converted) unless raw=true. World CSS requires a membership tier that allows it. Read the current values with worldanvil_get_world first, since each field is replaced, not merged.",
+        "Update an existing world in WorldAnvil, including its presentation: world CSS, global header/footer/announcement, sidebar and homepage sections. Only the fields you pass are changed. CSS fields are always sent verbatim. BBCode fields take Markdown (converted) or BBCode (kept as given); raw=true sends everything verbatim. World CSS needs a Grandmaster or Sage owner and is refused below that. Read the current values with worldanvil_get_world first, since each field is replaced, not merged.",
       inputSchema: {
         type: "object",
         properties: {
@@ -117,7 +117,7 @@ export function getToolDefinitions() {
           raw: {
             type: "boolean",
             description:
-              "Send every text field verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts.",
+              "true: send every text field verbatim. false: always convert Markdown. Omitted: convert Markdown, keep text that already contains BBCode, HTML or CSS.",
           },
         },
         required: ["world_id"],
@@ -178,7 +178,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_create_article",
       description:
-        "Create a new article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields (except CSS/class fields such as displayCss and cssClasses, which are always sent verbatim; pass raw=true to send everything verbatim). Use the fields parameter to set template-specific fields like localization, manifestation, lawtype (for Law), anatomy, traits (for Species), seeded, authornotes, etc.",
+        "Create a new article in WorldAnvil. Markdown is converted to BBCode in the content field and all template-specific fields; text that already contains BBCode, HTML or CSS is kept exactly as given, and CSS/class fields (displayCss, cssClasses) are never converted. raw=true sends everything verbatim, raw=false forces conversion. Custom CSS is refused if the world owner's membership is below Grandmaster. Use the fields parameter to set template-specific fields like localization, manifestation, lawtype (for Law), anatomy, traits (for Species), seeded, authornotes, etc.",
       inputSchema: {
         type: "object",
         properties: {
@@ -211,7 +211,7 @@ export function getToolDefinitions() {
           raw: {
             type: "boolean",
             description:
-              "Send content and fields verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts. CSS/class fields (displayCss, cssClasses) are always sent verbatim regardless.",
+              "true: send content and fields verbatim. false: always convert Markdown. Omitted: convert Markdown, keep text that already contains BBCode, HTML or CSS. CSS/class fields are never converted.",
           },
           category_id: {
             type: "string",
@@ -225,7 +225,7 @@ export function getToolDefinitions() {
     {
       name: "worldanvil_update_article",
       description:
-        "Update an existing article in WorldAnvil. Markdown is automatically converted to BBCode in both the content field AND all template-specific fields passed via the fields parameter, except CSS/class fields (displayCss, cssClasses), which are always sent verbatim. Pass raw=true to send everything verbatim (for hand-written BBCode).",
+        "Update an existing article in WorldAnvil. Markdown is converted to BBCode in the content field and the fields parameter; text that already contains BBCode, HTML or CSS is kept exactly as given, and CSS/class fields (displayCss, cssClasses) are never converted. raw=true sends everything verbatim, raw=false forces conversion. Custom CSS is refused if the world owner's membership is below Grandmaster.",
       inputSchema: {
         type: "object",
         properties: {
@@ -256,7 +256,7 @@ export function getToolDefinitions() {
           raw: {
             type: "boolean",
             description:
-              "Send content and fields verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode, e.g. [container:class] layouts. CSS/class fields (displayCss, cssClasses) are always sent verbatim regardless.",
+              "true: send content and fields verbatim. false: always convert Markdown. Omitted: convert Markdown, keep text that already contains BBCode, HTML or CSS. CSS/class fields are never converted.",
           },
           category_id: {
             type: "string",
@@ -2810,7 +2810,7 @@ export const RAW_CAPABLE_TOOLS = new Set([
 const RAW_PROPERTY = {
   type: "boolean",
   description:
-    "Send text verbatim (no Markdown-to-BBCode conversion). Use when the text is already BBCode. Setting WA_MARKDOWN=off makes this the default for every call.",
+    "true: send text verbatim. false: always convert Markdown. Omitted: convert Markdown, keep text that already contains BBCode, HTML or CSS (WA_MARKDOWN=off|on|auto changes the default).",
 };
 
 function addRawOption(tools) {

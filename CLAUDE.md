@@ -46,7 +46,8 @@ Tests load credentials from `.env` in the package directory (use `dotenv`). Inte
 | `WA_AUTH_TOKEN` | Always | User's WorldAnvil auth token |
 | `WA_APP_KEY` | Optional | Direct API mode; if omitted, uses default public proxy |
 | `WA_PROXY_URL` | Optional | Custom Cloudflare Worker proxy URL |
-| `WA_MARKDOWN` | Optional | `off` sends all text verbatim (no Markdown→BBCode conversion), like passing `raw: true` on every call |
+| `WA_MARKDOWN` | Optional | `auto` (default): convert Markdown, keep text that already contains BBCode, HTML or CSS. `off`: send all text verbatim. `on`: always convert. A call's `raw: true/false` overrides it |
+| `WA_TIER` | Optional | `auto` (default): look up the world owner's membership and refuse CSS below Grandmaster. `off`: no check. A tier name (e.g. `master`) simulates that tier |
 | `WA_TOOL_GROUPS` | Optional | Comma-separated tool groups or preset to load (default: all). Groups: core, content, images, campaign, maps, timeline, blocks, manuscripts, canvas, variables, social, rpg. Presets: all, standard, worldbuilding, writing, gamemaster |
 
 ## Architecture
@@ -62,7 +63,9 @@ Tests load credentials from `.env` in the package directory (use `dotenv`). Inte
 2. `handlers.js` — add a `case` in the switch statement
 3. `api-client.js` — add the HTTP method on `WorldAnvilClient`
 
-**Markdown→BBCode**: Article `content` fields and other text fields are automatically converted via `markdownToBBCode()` in `utils.js`. The function is called in handlers before sending to the API. WorldAnvil does not render Markdown natively. CSS, class and JS fields (`isRawField`) are never converted. Every converting tool takes `raw: true` to send text verbatim, and `WA_MARKDOWN=off` makes that the default.
+**Markdown→BBCode**: Article `content` fields and other text fields are automatically converted via `markdownToBBCode()` in `utils.js`. The function is called in handlers before sending to the API. WorldAnvil does not render Markdown natively. CSS, class and JS fields (`isRawField`) are never converted. In the default `auto` mode (`conversionMode`/`detectFormat` in `utils.js`), text that already contains BBCode, HTML or CSS is kept as given. Every converting tool takes `raw: true` (verbatim) or `raw: false` (always convert).
+
+**CSS tier check**: `assertCssAllowed()` in `handlers.js` refuses non-empty CSS fields on update_world, create/update_article and update_timeline when the world owner's `ownerMembershipPrototype` is below Grandmaster. It looks the tier up once per world (articles and timelines resolve their world first, also cached) and fails open if the lookup fails.
 
 **Known API quirks** (discovered through testing, documented in `api-client.js`):
 - Swagger shows `/variable_collection` but the live API uses `/variablecollection`
