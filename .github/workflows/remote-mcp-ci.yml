@@ -1,0 +1,22 @@
+name: Remote MCP validation
+on:
+  push:
+    branches: [feature/remote-mcp-http]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/worldbuilding/worldanvil-mcp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test
+      - run: docker build -t worldanvil-mcp-test .
