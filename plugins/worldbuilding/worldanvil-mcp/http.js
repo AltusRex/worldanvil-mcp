@@ -5,12 +5,11 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer } from "./src/server.js";
 
 export function createRemoteServer({ token, authToken, appKey, toolGroups, serverFactory = createServer } = {}) {
-  if (!token || token.length < 32) throw new Error("MCP_ACCESS_TOKEN must be at least 32 characters");
-  if (!authToken) throw new Error("WA_AUTH_TOKEN is required");
-  const expected = Buffer.from("Bearer " + token);
+  const configured = typeof token === "string" && token.length >= 32 && Boolean(authToken);
+  const expected = configured ? Buffer.from("Bearer " + token) : null;
   const authorized = (value) => {
     const actual = Buffer.from(value || "");
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    return expected !== null && actual.length === expected.length && timingSafeEqual(actual, expected);
   };
   return createHttpServer(async (req, res) => {
     const reply = (status, message) => {
@@ -21,6 +20,7 @@ export function createRemoteServer({ token, authToken, appKey, toolGroups, serve
       res.writeHead(200, { "Content-Type": "text/plain" }); res.end("ok"); return;
     }
     if (req.url !== "/mcp") return reply(404, "Not found");
+    if (!configured) return reply(503, "MCP unavailable");
     if (!authorized(req.headers.authorization)) {
       res.setHeader("WWW-Authenticate", "Bearer");
       return reply(401, "Unauthorized");

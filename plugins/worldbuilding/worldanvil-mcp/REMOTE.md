@@ -4,7 +4,7 @@ The existing stdio entry point is unchanged. This branch adds a stateless Stream
 
 ## Local test
 
-Use Node 22, run npm ci and npm test in this directory. Set WA_AUTH_TOKEN and a separate random MCP_ACCESS_TOKEN (at least 32 characters). Optionally set WA_APP_KEY for direct API mode; otherwise the existing proxy is used. Run node http.js. The endpoint is http://localhost:8080/mcp; GET /healthz is unauthenticated and exposes no data. Send Authorization: Bearer <MCP_ACCESS_TOKEN> and Accept: application/json, text/event-stream on MCP POST requests. Do not expose plain HTTP publicly.
+Use Node 22, run npm ci and npm test in this directory. Set WA_AUTH_TOKEN and a separate random MCP_ACCESS_TOKEN (at least 32 characters). Optionally set WA_APP_KEY for direct API mode; otherwise the existing proxy is used. Run node http.js. The endpoint is http://localhost:8080/mcp; GET /healthz is unauthenticated and exposes no data. It returns 200 even when credentials are missing or invalid in length; it measures process liveness only, not World Anvil connectivity. Until both required credentials are configured, /mcp returns 503 and never constructs the World Anvil client. Use /healthz to wake a sleeping Render free service before attempting MCP requests. Send Authorization: Bearer <MCP_ACCESS_TOKEN> and Accept: application/json, text/event-stream on MCP POST requests. Do not expose plain HTTP publicly.
 
 ## Cloud Run
 

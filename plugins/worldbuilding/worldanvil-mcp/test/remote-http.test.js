@@ -5,8 +5,8 @@ import { ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const token = "x".repeat(40);
 let server;
-async function start() {
-  server = createRemoteServer({ token, authToken: "mock", serverFactory: () => {
+async function start(credentials = { token, authToken: "mock" }) {
+  server = createRemoteServer({ ...credentials, serverFactory: () => {
     const server = new Server({ name: "test", version: "1.0.0" }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [] }));
     return { server };
@@ -18,7 +18,14 @@ afterEach(async () => {
   if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); server = undefined; }
 });
 describe("remote MCP", () => {
-  it("fails closed without credentials", () => expect(() => createRemoteServer()).toThrow());
+  it.each([{}, { token }, { authToken: "mock" }, { token: "short", authToken: "mock" }])("starts but fails closed with incomplete credentials: %j", async (credentials) => {
+    const url = await start(credentials);
+    const health = await fetch(url + "/healthz");
+    expect(health.status).toBe(200);
+    expect(await health.text()).toBe("ok");
+    const response = await fetch(url + "/mcp", { method: "POST", headers: { authorization: "Bearer " + token } });
+    expect(response.status).toBe(503);
+  });
   it("rejects missing and incorrect bearer tokens", async () => {
     const url = await start();
     expect((await fetch(url + "/mcp", { method: "POST" })).status).toBe(401);
