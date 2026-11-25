@@ -16,10 +16,20 @@ export function createRemoteServer({ token, authToken, appKey, toolGroups, serve
       res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify({ error: message }));
     };
-    if (req.url === "/healthz" && req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "text/plain" }); res.end("ok"); return;
+    let path;
+    try { path = new URL(req.url, "http://localhost").pathname.replace(/\/+$/, "") || "/"; }
+    catch { return reply(400, "Invalid request"); }
+    const route = ["/", "/healthz", "/mcp"].includes(path) ? path : "unknown";
+    const method = ["GET", "HEAD", "POST", "DELETE", "OPTIONS"].includes(req.method) ? req.method : "OTHER";
+    res.once("finish", () => console.error(JSON.stringify({ method, route, status: res.statusCode })));
+    if (path === "/" && ["GET", "HEAD"].includes(req.method)) {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ service: "terminus-worldanvil-mcp", health: "/healthz" })); return;
     }
-    if (req.url !== "/mcp") return reply(404, "Not found");
+    if (path === "/healthz" && ["GET", "HEAD"].includes(req.method)) {
+      res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); res.end("ok"); return;
+    }
+    if (path !== "/mcp") return reply(404, "Not found");
     if (!configured) return reply(503, "MCP unavailable");
     if (!authorized(req.headers.authorization)) {
       res.setHeader("WWW-Authenticate", "Bearer");

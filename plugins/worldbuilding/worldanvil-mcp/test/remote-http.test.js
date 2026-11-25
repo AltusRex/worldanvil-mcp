@@ -18,6 +18,20 @@ afterEach(async () => {
   if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); server = undefined; }
 });
 describe("remote MCP", () => {
+  it("recognizes root and normalized health paths without credentials", async () => {
+    const url = await start({});
+    const root = await fetch(url + "/");
+    expect(root.status).toBe(200);
+    expect((await root.json()).service).toBe("terminus-worldanvil-mcp");
+    for (const path of ["/healthz", "/healthz/", "/healthz?probe=1", "/healthz/?probe=1"]) {
+      const response = await fetch(url + path);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("ok");
+    }
+    expect((await fetch(url + "/healthz", { method: "HEAD" })).status).toBe(200);
+    expect((await fetch(url + "/mcp/?probe=1")).status).toBe(503);
+    expect((await fetch(url + "/unknown")).status).toBe(404);
+  });
   it.each([{}, { token }, { authToken: "mock" }, { token: "short", authToken: "mock" }])("starts but fails closed with incomplete credentials: %j", async (credentials) => {
     const url = await start(credentials);
     const health = await fetch(url + "/healthz");
