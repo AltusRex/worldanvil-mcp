@@ -20,8 +20,11 @@ async function body(req,type) {
 }
 export function createOAuth({issuer,ownerSecret,redirectUris=[],statePath}={}) {
   if(!issuer || typeof ownerSecret!=="string" || ownerSecret.length<32 || !redirectUris.length) return null;
-  const origin=new URL(issuer);
-  if(origin.protocol!=="https:" || origin.origin!==issuer) throw Error("OAuth issuer must be an HTTPS origin");
+  const raw=issuer.trim();
+  let origin;
+  try { origin=new URL(raw); } catch { throw Error("OAuth issuer must be an HTTPS origin"); }
+  if(origin.protocol!=="https:" || origin.username || origin.password || origin.pathname!=="/" || origin.search || origin.hash || !/^https:\/\/[^/?#\\\s]+\/?$/i.test(raw)) throw Error("OAuth issuer must be an HTTPS origin");
+  issuer=origin.origin;
   for(const uri of redirectUris) { const u=new URL(uri); if(u.protocol!=="https:" || u.hash || u.username || u.password) throw Error("Invalid OAuth redirect URI"); }
   const resource=issuer+"/mcp", metadata=issuer+"/.well-known/oauth-protected-resource/mcp";
   const pending=new Map(), codes=new Map(), access=new Map(), refresh=new Map(), spent=new Map();

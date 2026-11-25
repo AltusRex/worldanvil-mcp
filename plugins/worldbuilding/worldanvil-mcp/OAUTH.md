@@ -39,3 +39,6 @@ Reference: https://developers.openai.com/plugins/build/auth
 - Verify public health, metadata, anonymous MCP rejection, client registration, owner approval and authenticated initialization. Then perform a read-only World Anvil request before considering write operations.
 - Free ephemeral hosting may lose tokens upon sleep/restart/redeploy; durable storage is not verified. Owner must accept reauthorization or separately approve durable hosting. Never restore stale token snapshots.
 - Custom OAuth implementation has not undergone independent security audit. OpenAI recommends established identity providers. Do not treat unit tests as live compatibility certification. Tool-level auth metadata may be needed if the host requires tool-triggered linking rather than connection-level authentication.
+
+### World Anvil proxy mode
+WA_APP_KEY is optional. Without it, the inherited API client uses WA_PROXY_URL or its default public proxy at https://worldanvil-proxy.onrender.com. The proxy receives the World Anvil user token and injects its application key. Only if you trust that operator, set WA_PROXY_ACCEPTED=true to acknowledge this in offline preflight. This flag is a preflight acknowledgment, not a runtime access control; the existing API routing is unchanged. Custom proxies must be HTTPS origins on the default port. Direct mode does not require proxy acceptance.
