@@ -24,3 +24,8 @@ describe("proxy preflight",()=>{
  it("requires explicit proxy acceptance",()=>expect(preflight({...proxy,WA_PROXY_ACCEPTED:""}).ready).toBe(false));
  it("validates custom HTTPS proxy without exposing URL",()=>{const url="https://proxy.example";const result=preflight({...proxy,WA_PROXY_URL:url});expect(result.ready).toBe(true);expect(JSON.stringify(result)).not.toContain(url);expect(preflight({...proxy,WA_PROXY_URL:"http://proxy.example"}).ready).toBe(false);});
 });
+
+describe("issuer normalization",()=>{
+ it.each([" https://example.test ","https://example.test/","HTTPS://EXAMPLE.TEST","https://example.test:443"])("accepts equivalent HTTPS origin",issuer=>expect(preflight({...valid,MCP_OAUTH_ISSUER:issuer}).ready).toBe(true));
+ it.each(["https://example.test/mcp","https://example.test/?","https://example.test/#","https://user@example.test","https://example.test/a/..","http://example.test"])("rejects unsafe issuer",issuer=>expect(preflight({...valid,MCP_OAUTH_ISSUER:issuer}).ready).toBe(false));
+});
