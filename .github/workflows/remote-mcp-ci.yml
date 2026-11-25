@@ -1,14 +1,19 @@
 name: Remote MCP validation
 on:
   push:
-    branches: [feature/remote-mcp-http]
+    branches: [feature/remote-mcp-http, feature/terminus-oauth]
   pull_request:
-    branches: [main]
+    branches: [main, feature/remote-mcp-http]
+  workflow_dispatch:
+concurrency:
+  group: remote-mcp-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: plugins/worldbuilding/worldanvil-mcp
