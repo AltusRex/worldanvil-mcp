@@ -56,3 +56,39 @@ describe("remote MCP", () => {
     expect((await response.json()).result.serverInfo.name).toBe("test");
   });
 });
+
+describe("owner OAuth", () => {
+  it("discovers, registers, authorizes with PKCE, rejects replay and rotates refresh", async () => {
+    const issuer="https://example.test", redirect="https://client.example/callback", secret="s".repeat(48);
+    const url=await start({authToken:"mock",oauthOptions:{issuer,ownerSecret:secret,redirectUris:[redirect]}});
+    const {createHash}=await import("node:crypto");
+    const verifier="v".repeat(64), challenge=createHash("sha256").update(verifier).digest("base64url");
+    const post=(path,data,type="application/x-www-form-urlencoded")=>fetch(url+path,{method:"POST",headers:{"content-type":type},body:type==="application/json"?JSON.stringify(data):new URLSearchParams(data),redirect:"manual"});
+    expect((await fetch(url+"/healthz")).status).toBe(200);
+    const unauthorized=await fetch(url+"/mcp");
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get("www-authenticate")).toContain("resource_metadata");
+    expect((await (await fetch(url+"/.well-known/oauth-protected-resource/mcp")).json()).resource).toBe(issuer+"/mcp");
+    expect((await post("/oauth/register",{redirect_uris:["https://evil.example"]},"application/json")).status).toBe(400);
+    const registration=await post("/oauth/register",{redirect_uris:[redirect],token_endpoint_auth_method:"none"},"application/json");
+    expect(registration.status).toBe(201);
+    const {client_id}=await registration.json();
+    const params=new URLSearchParams({client_id,redirect_uri:redirect,response_type:"code",code_challenge:challenge,code_challenge_method:"S256",state:"state",resource:issuer+"/mcp"});
+    const begin=async()=> (await (await fetch(url+"/oauth/authorize?"+params)).text()).match(/name="request" value="([^"]+)"/)[1];
+    expect((await post("/oauth/authorize",{request:await begin(),secret:"wrong"})).status).toBe(403);
+    const approval=await post("/oauth/authorize",{request:await begin(),secret});
+    expect(approval.status).toBe(303);
+    const callback=new URL(approval.headers.get("location"));
+    expect(callback.searchParams.get("state")).toBe("state");
+    const exchange={grant_type:"authorization_code",client_id,redirect_uri:redirect,code:callback.searchParams.get("code"),code_verifier:verifier};
+    expect((await post("/oauth/token",{...exchange,code_verifier:"w".repeat(64)})).status).toBe(400);
+    const response=await post("/oauth/token",exchange);
+    expect(response.status).toBe(200);
+    const tokens=await response.json();
+    expect((await post("/oauth/token",exchange)).status).toBe(400);
+    expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(405);
+    const refresh={grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token};
+    expect((await post("/oauth/token",refresh)).status).toBe(200);
+    expect((await post("/oauth/token",refresh)).status).toBe(400);
+  });
+});
