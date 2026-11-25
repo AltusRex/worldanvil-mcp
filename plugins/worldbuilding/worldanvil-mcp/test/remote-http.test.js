@@ -87,6 +87,9 @@ describe("owner OAuth", () => {
     const tokens=await response.json();
     expect((await post("/oauth/token",exchange)).status).toBe(400);
     expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(405);
+    const initialized=await fetch(url+"/mcp",{method:"POST",headers:{authorization:"Bearer "+tokens.access_token,"content-type":"application/json",accept:"application/json, text/event-stream"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-03-26",capabilities:{},clientInfo:{name:"oauth-test",version:"1"}}})});
+    expect(initialized.status).toBe(200);
+    expect((await initialized.json()).result.serverInfo.name).toBe("test");
     const refresh={grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token};
     const rotated=await post("/oauth/token",refresh);
     expect(rotated.status).toBe(200);
