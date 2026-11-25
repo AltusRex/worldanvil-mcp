@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,10 +98,9 @@ describe("owner OAuth", () => {
     expect(initialized.status).toBe(200);
     expect((await initialized.json()).result.serverInfo.name).toBe("test");
     const refresh={grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token};
-    const rotated=await post("/oauth/token",refresh);
-    expect(rotated.status).toBe(200);
-    const next=await rotated.json();
-    expect((await post("/oauth/token",refresh)).status).toBe(400);
+    const attempts=await Promise.all([post("/oauth/token",refresh),post("/oauth/token",refresh)]);
+    expect(attempts.map(r=>r.status).sort()).toEqual([200,400]);
+    const next=await attempts.find(r=>r.status===200).json();
     expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+next.access_token}})).status).toBe(401);
     expect((await post("/oauth/token",{...refresh,refresh_token:next.refresh_token})).status).toBe(400);
   });
@@ -164,6 +163,39 @@ describe("OAuth restart behavior", () => {
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=undefined;url=await start(credentials);
     expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+next.access_token}})).status).toBe(401);
     expect((await post("/oauth/token",{...refresh,refresh_token:next.refresh_token})).status).toBe(400);
+    } finally {rmSync(dir,{recursive:true,force:true});}
+  });
+});
+
+describe("OAuth storage security", () => {
+  it("rejects tampered snapshots and fails closed when a write cannot commit", async () => {
+    const {createOAuth}=await import("../oauth.js");
+    const dir=mkdtempSync(join(tmpdir(),"terminus-security-"));
+    try {
+      const issuer="https://example.test", redirect="https://client.example/callback", ownerSecret="s".repeat(48);
+      const statePath=join(dir,"state.json");
+      const oauthOptions={issuer,ownerSecret,redirectUris:[redirect],statePath};
+      const url=await start({authToken:"mock",oauthOptions});
+      const post=(path,data,type="application/x-www-form-urlencoded")=>fetch(url+path,{method:"POST",headers:{"content-type":type},body:type==="application/json"?JSON.stringify(data):new URLSearchParams(data),redirect:"manual"});
+      const {client_id}=await (await post("/oauth/register",{redirect_uris:[redirect]},"application/json")).json();
+      const {createHash}=await import("node:crypto");
+      const verifier="v".repeat(64);
+      const params=new URLSearchParams({client_id,redirect_uri:redirect,response_type:"code",code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"});
+      const request=(await (await fetch(url+"/oauth/authorize?"+params)).text()).match(/name="request" value="([^"]+)"/)[1];
+      const approval=await post("/oauth/authorize",{request,secret:ownerSecret});
+      expect(approval.status).toBe(303);
+      const code=new URL(approval.headers.get("location")).searchParams.get("code");
+      const exchange=await post("/oauth/token",{grant_type:"authorization_code",client_id,redirect_uri:redirect,code,code_verifier:verifier});
+      expect(exchange.status).toBe(200);
+      const tokens=await exchange.json();
+      const envelope=JSON.parse(readFileSync(statePath,"utf8"));
+      envelope.mac="invalid";
+      writeFileSync(statePath,JSON.stringify(envelope));
+      expect(()=>createOAuth(oauthOptions)).toThrow();
+      rmSync(dir,{recursive:true,force:true});
+      expect((await post("/oauth/token",{grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token})).status).toBe(503);
+      expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(401);
+      expect((await fetch(url+"/healthz")).status).toBe(200);
     } finally {rmSync(dir,{recursive:true,force:true});}
   });
 });
