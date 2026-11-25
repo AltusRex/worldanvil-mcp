@@ -75,10 +75,14 @@ describe("owner OAuth", () => {
     const {client_id}=await registration.json();
     const params=new URLSearchParams({client_id,redirect_uri:redirect,response_type:"code",code_challenge:challenge,code_challenge_method:"S256",state:"state",resource:issuer+"/mcp"});
     const begin=async()=> (await (await fetch(url+"/oauth/authorize?"+params)).text()).match(/name="request" value="([^"]+)"/)[1];
-    expect((await post("/oauth/authorize",{request:await begin(),secret:"wrong"})).status).toBe(403);
+    const denied=await post("/oauth/authorize",{request:await begin(),secret:"wrong"});
+    expect(denied.status).toBe(303);
+    expect(new URL(denied.headers.get("location")).searchParams.get("iss")).toBe(issuer);
+    expect(new URL(denied.headers.get("location")).searchParams.get("error")).toBe("access_denied");
     const approval=await post("/oauth/authorize",{request:await begin(),secret});
     expect(approval.status).toBe(303);
     const callback=new URL(approval.headers.get("location"));
+    expect(callback.searchParams.get("iss")).toBe(issuer);
     expect(callback.searchParams.get("state")).toBe("state");
     const exchange={grant_type:"authorization_code",client_id,redirect_uri:redirect,code:callback.searchParams.get("code"),code_verifier:verifier};
     expect((await post("/oauth/token",{...exchange,code_verifier:"w".repeat(64)})).status).toBe(400);
