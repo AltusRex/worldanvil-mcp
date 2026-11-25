@@ -55,8 +55,9 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[],statePath}={}) {
   const transaction=fn=>{
     if(storageFailed)throw Error("OAuth storage unavailable");
     const before=snapshot();
-    try{const result=fn();persist();return result;}
-    catch(e){restore(before);if(statePath)storageFailed=true;throw e;}
+    let result;
+    try{result=fn();}catch(e){restore(before);throw e;}
+    try{persist();return result;}catch(e){restore(before);if(statePath)storageFailed=true;throw e;}
   };
   let failedApprovals=0, approvalWindow=0;
   const put=(map,key,value,ttl)=>{ for(const [k,v] of map) if(v.exp<=Date.now()) map.delete(k); if(map.size>=1000) throw Error("capacity"); map.set(key,{...value,exp:Date.now()+ttl}); };
