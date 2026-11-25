@@ -13,7 +13,7 @@ Set these in the hosting environment, not source control:
 OAuth is disabled unless all three OAuth settings are present and valid. Health checks remain independent. The owner enters the approval secret only on the verified Terminus HTTPS authorization page.
 
 ## Current limitations
-State is process-local and lost on restart. Client registration expires after seven days, access tokens after one hour, refresh families after 24 hours. Refresh replay revokes the family within the running process. The global approval throttle can cause temporary denial of service. Public registration has bounded capacity but is susceptible to exhaustion. Do not claim durable sessions or production-grade abuse resistance.
+Client identity is derived from the issuer, owner secret and canonical configured redirect set; it survives restarts with unchanged configuration. Registration requires the exact configured redirect set. Access tokens, refresh tokens, pending approvals and codes are process-local and lost on restart. Access tokens expire after one hour and refresh families after 24 hours. Refresh replay revokes the family within the running process. The global approval throttle can cause temporary denial of service. Public registration does not allocate client records; pending approvals and token maps have bounded capacity but remain susceptible to exhaustion. Do not claim durable sessions or production-grade abuse resistance.
 
 ## Acceptance gates
 - Run npm ci and npm test in this directory and build the Docker image.
