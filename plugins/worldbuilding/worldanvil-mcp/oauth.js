@@ -26,10 +26,10 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
   const put=(map,key,value,ttl)=>{ for(const [k,v] of map) if(v.exp<=Date.now()) map.delete(k); if(map.size>=1000) throw Error("capacity"); map.set(key,{...value,exp:Date.now()+ttl}); };
   const get=(map,key)=>{const v=map.get(key);return v && v.exp>Date.now()?v:null;};
   const scope="mcp";
-  const issue=(res,client,family=random())=>{const a=random(),r=random();put(access,hash(a),{client,family},3600000);put(refresh,hash(r),{client,family},86400000);json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
+  const issue=(res,client,family=random(),deadline=Date.now()+86400000)=>{const a=random(),r=random();put(access,hash(a),{client,family},3600000);put(refresh,hash(r),{client,family,deadline},Math.max(0,deadline-Date.now()));json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
   return {
     challenge:'Bearer resource_metadata="'+metadata+'"',
-    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && Boolean(get(access,hash(header.slice(7))));},
+    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && Boolean(get(clients,get(access,hash(header.slice(7)))?.client));},
     async handle(req,res,path){
       const fail=(error="invalid_request",status=400)=>json(res,status,{error});
       const routes=["/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/authorize","/oauth/token"];
@@ -75,8 +75,8 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
               fail("invalid_grant");return true;
             }
             if(!p||p.client!==b.client_id||(b.scope && b.scope!==scope)){fail("invalid_grant");return true;}
-            put(spent,k,{client:p.client,family:p.family},86400000);
-            refresh.delete(k);issue(res,b.client_id,p.family);
+            put(spent,k,{client:p.client,family:p.family},Math.max(0,p.deadline-Date.now())+3600000);
+            refresh.delete(k);issue(res,b.client_id,p.family,p.deadline);
           } else fail("unsupported_grant_type");
         } else fail("invalid_request",405);
       } catch {if(!res.headersSent)fail();else res.end();}
