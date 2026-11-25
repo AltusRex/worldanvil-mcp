@@ -74,7 +74,7 @@ export function createRemoteServer({ token, authToken, appKey, toolGroups, oauth
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = createRemoteServer({
     token: process.env.MCP_ACCESS_TOKEN,
-    oauthOptions: { issuer: process.env.MCP_OAUTH_ISSUER, ownerSecret: process.env.MCP_OAUTH_OWNER_SECRET, redirectUris: (process.env.MCP_OAUTH_REDIRECT_URIS || "").split(",").map(s => s.trim()).filter(Boolean) },
+    oauthOptions: { statePath: process.env.MCP_OAUTH_STATE_PATH, issuer: process.env.MCP_OAUTH_ISSUER, ownerSecret: process.env.MCP_OAUTH_OWNER_SECRET, redirectUris: (process.env.MCP_OAUTH_REDIRECT_URIS || "").split(",").map(s => s.trim()).filter(Boolean) },
     authToken: process.env.WA_AUTH_TOKEN,
     appKey: process.env.WA_APP_KEY,
     toolGroups: process.env.WA_TOOL_GROUPS,
