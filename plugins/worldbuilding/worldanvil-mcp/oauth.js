@@ -26,10 +26,10 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
   const put=(map,key,value,ttl)=>{ for(const [k,v] of map) if(v.exp<=Date.now()) map.delete(k); if(map.size>=1000) throw Error("capacity"); map.set(key,{...value,exp:Date.now()+ttl}); };
   const get=(map,key)=>{const v=map.get(key);return v && v.exp>Date.now()?v:null;};
   const scope="mcp";
-  const issue=(res,client,family=random(),deadline=Date.now()+86400000)=>{const a=random(),r=random();put(access,hash(a),{client,family},3600000);put(refresh,hash(r),{client,family,deadline},Math.max(0,deadline-Date.now()));json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
+  const issue=(res,client,family=random(),deadline=Date.now()+86400000)=>{const a=random(),r=random();put(access,hash(a),{client,family,resource,scope},3600000);put(refresh,hash(r),{client,family,deadline},Math.max(0,deadline-Date.now()));json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
   return {
     challenge:'Bearer resource_metadata="'+metadata+'"',
-    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && Boolean(get(clients,get(access,hash(header.slice(7)))?.client));},
+    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && (()=>{const a=get(access,hash(header.slice(7)));return Boolean(a && a.resource===resource && a.scope===scope && get(clients,a.client));})();},
     async handle(req,res,path){
       const fail=(error="invalid_request",status=400)=>json(res,status,{error});
       const routes=["/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/authorize","/oauth/token"];
@@ -37,7 +37,7 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
       try {
         if(req.method==="GET" && path.startsWith("/.well-known/")){
           if(path.includes("protected-resource")) json(res,200,{resource,authorization_servers:[issuer],scopes_supported:[scope],bearer_methods_supported:["header"]});
-          else json(res,200,{issuer,authorization_endpoint:issuer+"/oauth/authorize",token_endpoint:issuer+"/oauth/token",registration_endpoint:issuer+"/oauth/register",response_types_supported:["code"],grant_types_supported:["authorization_code","refresh_token"],code_challenge_methods_supported:["S256"],token_endpoint_auth_methods_supported:["none"],scopes_supported:[scope]});
+          else json(res,200,{issuer,authorization_response_iss_parameter_supported:true,authorization_endpoint:issuer+"/oauth/authorize",token_endpoint:issuer+"/oauth/token",registration_endpoint:issuer+"/oauth/register",response_types_supported:["code"],grant_types_supported:["authorization_code","refresh_token"],code_challenge_methods_supported:["S256"],token_endpoint_auth_methods_supported:["none"],scopes_supported:[scope]});
         } else if(path==="/oauth/register" && req.method==="POST"){
           const b=await body(req,"application/json");
           if(!Array.isArray(b.redirect_uris)||!b.redirect_uris.length||!b.redirect_uris.every(u=>redirectUris.includes(u))||(b.token_endpoint_auth_method && b.token_endpoint_auth_method!=="none")) {fail("invalid_client_metadata");return true;}
@@ -55,9 +55,10 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
           if(Date.now()>=approvalWindow){failedApprovals=0;approvalWindow=Date.now()+60000;}
           if(failedApprovals>=10){res.setHeader("Retry-After",String(Math.ceil((approvalWindow-Date.now())/1000)));fail("temporarily_unavailable",429);return true;}
           pending.delete(b.request);
-          if(!p||!equal(b.secret,ownerSecret)){failedApprovals++;fail("access_denied",403);return true;}
+          if(!p){fail("access_denied",403);return true;}
+          if(!equal(b.secret,ownerSecret)){failedApprovals++;const dest=new URL(p.redirect_uri);dest.searchParams.set("error","access_denied");dest.searchParams.set("iss",issuer);if(p.state!==undefined)dest.searchParams.set("state",p.state);res.writeHead(303,{Location:dest.href,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"});res.end();return true;}
           const code=random();put(codes,hash(code),p,60000);
-          const dest=new URL(p.redirect_uri);dest.searchParams.set("code",code);if(p.state!==undefined)dest.searchParams.set("state",p.state);
+          const dest=new URL(p.redirect_uri);dest.searchParams.set("iss",issuer);dest.searchParams.set("code",code);if(p.state!==undefined)dest.searchParams.set("state",p.state);
           res.writeHead(303,{Location:dest.href,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"});res.end();
         } else if(path==="/oauth/token" && req.method==="POST"){
           const b=await body(req,"application/x-www-form-urlencoded");
