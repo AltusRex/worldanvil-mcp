@@ -1,4 +1,4 @@
-import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import { randomBytes, createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 const random = () => randomBytes(32).toString("base64url");
 const hash = s => createHash("sha256").update(s).digest("base64url");
@@ -21,15 +21,19 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
   if(origin.protocol!=="https:" || origin.origin!==issuer) throw Error("OAuth issuer must be an HTTPS origin");
   for(const uri of redirectUris) { const u=new URL(uri); if(u.protocol!=="https:" || u.hash || u.username || u.password) throw Error("Invalid OAuth redirect URI"); }
   const resource=issuer+"/mcp", metadata=issuer+"/.well-known/oauth-protected-resource/mcp";
-  const clients=new Map(), pending=new Map(), codes=new Map(), access=new Map(), refresh=new Map(), spent=new Map();
+  const pending=new Map(), codes=new Map(), access=new Map(), refresh=new Map(), spent=new Map();
   let failedApprovals=0, approvalWindow=0;
   const put=(map,key,value,ttl)=>{ for(const [k,v] of map) if(v.exp<=Date.now()) map.delete(k); if(map.size>=1000) throw Error("capacity"); map.set(key,{...value,exp:Date.now()+ttl}); };
   const get=(map,key)=>{const v=map.get(key);return v && v.exp>Date.now()?v:null;};
   const scope="mcp";
+  // Stable public client identities survive process restarts; owner approval is still required.
+  const clientKey=uris=>createHmac("sha256",ownerSecret).update(JSON.stringify([issuer,"client-v1",uris])).digest("base64url");
+  const canonical=uris=>[...new Set(uris)].sort();
+  const lookupClient=id=>{if(typeof id!=="string")return null;const uris=canonical(redirectUris);return equal(id,clientKey(uris))?{uris}:null;};
   const issue=(res,client,family=random(),deadline=Date.now()+86400000)=>{const a=random(),r=random();put(access,hash(a),{client,family,resource,scope},3600000);put(refresh,hash(r),{client,family,deadline},Math.max(0,deadline-Date.now()));json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
   return {
     challenge:'Bearer resource_metadata="'+metadata+'"',
-    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && (()=>{const a=get(access,hash(header.slice(7)));return Boolean(a && a.resource===resource && a.scope===scope && get(clients,a.client));})();},
+    authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && (()=>{const a=get(access,hash(header.slice(7)));return Boolean(a && a.resource===resource && a.scope===scope && lookupClient(a.client));})();},
     async handle(req,res,path){
       const fail=(error="invalid_request",status=400)=>json(res,status,{error});
       const routes=["/.well-known/oauth-protected-resource","/.well-known/oauth-protected-resource/mcp","/.well-known/oauth-authorization-server","/oauth/register","/oauth/authorize","/oauth/token"];
@@ -40,12 +44,12 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
           else json(res,200,{issuer,authorization_response_iss_parameter_supported:true,authorization_endpoint:issuer+"/oauth/authorize",token_endpoint:issuer+"/oauth/token",registration_endpoint:issuer+"/oauth/register",response_types_supported:["code"],grant_types_supported:["authorization_code","refresh_token"],code_challenge_methods_supported:["S256"],token_endpoint_auth_methods_supported:["none"],scopes_supported:[scope]});
         } else if(path==="/oauth/register" && req.method==="POST"){
           const b=await body(req,"application/json");
-          if(!Array.isArray(b.redirect_uris)||!b.redirect_uris.length||!b.redirect_uris.every(u=>redirectUris.includes(u))||(b.token_endpoint_auth_method && b.token_endpoint_auth_method!=="none")) {fail("invalid_client_metadata");return true;}
-          const id=random();put(clients,id,{uris:b.redirect_uris},7*86400000);
+          if(!Array.isArray(b.redirect_uris)||!b.redirect_uris.length||JSON.stringify(canonical(b.redirect_uris))!==JSON.stringify(canonical(redirectUris))||(b.token_endpoint_auth_method && b.token_endpoint_auth_method!=="none")) {fail("invalid_client_metadata");return true;}
+          const id=clientKey(canonical(redirectUris));
           json(res,201,{client_id:id,redirect_uris:b.redirect_uris,token_endpoint_auth_method:"none",grant_types:["authorization_code","refresh_token"],response_types:["code"]});
         } else if(path==="/oauth/authorize" && req.method==="GET"){
           const q=new URL(req.url,issuer).searchParams;
-          const b=Object.fromEntries(q), c=get(clients,b.client_id);
+          const b=Object.fromEntries(q), c=lookupClient(b.client_id);
           if(new Set(q.keys()).size!==[...q.keys()].length || !c || !c.uris.includes(b.redirect_uri)||b.response_type!=="code"||b.code_challenge_method!=="S256"||!/^[A-Za-z0-9_-]{43}$/.test(b.code_challenge||"")||(b.resource && b.resource!==resource)||(b.scope && b.scope!==scope)){fail();return true;}
           const id=random();put(pending,id,b,300000);
           res.writeHead(200,{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","Content-Security-Policy":"default-src 'none'; form-action 'self'; frame-ancestors 'none'","Referrer-Policy":"no-referrer"});
@@ -62,7 +66,7 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
           res.writeHead(303,{Location:dest.href,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"});res.end();
         } else if(path==="/oauth/token" && req.method==="POST"){
           const b=await body(req,"application/x-www-form-urlencoded");
-          if(!get(clients,b.client_id)){fail("invalid_client",401);return true;}
+          if(!lookupClient(b.client_id)){fail("invalid_client",401);return true;}
           if(b.resource && b.resource!==resource){fail("invalid_target");return true;}
           if(b.grant_type==="authorization_code"){
             const k=hash(b.code||""),p=get(codes,k);
