@@ -21,11 +21,12 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
   if(origin.protocol!=="https:" || origin.origin!==issuer) throw Error("OAuth issuer must be an HTTPS origin");
   for(const uri of redirectUris) { const u=new URL(uri); if(u.protocol!=="https:" || u.hash || u.username || u.password) throw Error("Invalid OAuth redirect URI"); }
   const resource=issuer+"/mcp", metadata=issuer+"/.well-known/oauth-protected-resource/mcp";
-  const clients=new Map(), pending=new Map(), codes=new Map(), access=new Map(), refresh=new Map();
+  const clients=new Map(), pending=new Map(), codes=new Map(), access=new Map(), refresh=new Map(), spent=new Map();
+  let failedApprovals=0, approvalWindow=0;
   const put=(map,key,value,ttl)=>{ for(const [k,v] of map) if(v.exp<=Date.now()) map.delete(k); if(map.size>=1000) throw Error("capacity"); map.set(key,{...value,exp:Date.now()+ttl}); };
   const get=(map,key)=>{const v=map.get(key);return v && v.exp>Date.now()?v:null;};
   const scope="mcp";
-  const issue=(res,client)=>{const a=random(),r=random();put(access,hash(a),{client},3600000);put(refresh,hash(r),{client},86400000);json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
+  const issue=(res,client,family=random())=>{const a=random(),r=random();put(access,hash(a),{client,family},3600000);put(refresh,hash(r),{client,family},86400000);json(res,200,{access_token:a,token_type:"Bearer",expires_in:3600,refresh_token:r,scope});};
   return {
     challenge:'Bearer resource_metadata="'+metadata+'"',
     authorized(header){return typeof header==="string" && /^Bearer [A-Za-z0-9_-]{43}$/.test(header) && Boolean(get(access,hash(header.slice(7))));},
@@ -51,8 +52,10 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
           res.end('<!doctype html><title>Authorize Terminus</title><h1>Authorize access to your World Anvil account</h1><p>Only the instance owner should approve this request.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="request" value="'+escape(id)+'"><label>Owner authorization secret <input type="password" name="secret" required autocomplete="off"></label><button>Authorize</button></form>');
         } else if(path==="/oauth/authorize" && req.method==="POST"){
           const b=await body(req,"application/x-www-form-urlencoded"), p=get(pending,b.request);
+          if(Date.now()>=approvalWindow){failedApprovals=0;approvalWindow=Date.now()+60000;}
+          if(failedApprovals>=10){res.setHeader("Retry-After",String(Math.ceil((approvalWindow-Date.now())/1000)));fail("temporarily_unavailable",429);return true;}
           pending.delete(b.request);
-          if(!p||!equal(b.secret,ownerSecret)){fail("access_denied",403);return true;}
+          if(!p||!equal(b.secret,ownerSecret)){failedApprovals++;fail("access_denied",403);return true;}
           const code=random();put(codes,hash(code),p,60000);
           const dest=new URL(p.redirect_uri);dest.searchParams.set("code",code);if(p.state!==undefined)dest.searchParams.set("state",p.state);
           res.writeHead(303,{Location:dest.href,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"});res.end();
@@ -66,8 +69,14 @@ export function createOAuth({issuer,ownerSecret,redirectUris=[]}={}) {
             codes.delete(k);issue(res,b.client_id);
           } else if(b.grant_type==="refresh_token"){
             const k=hash(b.refresh_token||""),p=get(refresh,k);
+            const replay=get(spent,k);
+            if(replay && replay.client===b.client_id){
+              for(const map of [access,refresh]) for(const [key,value] of map) if(value.family===replay.family) map.delete(key);
+              fail("invalid_grant");return true;
+            }
             if(!p||p.client!==b.client_id||(b.scope && b.scope!==scope)){fail("invalid_grant");return true;}
-            refresh.delete(k);issue(res,b.client_id);
+            put(spent,k,{client:p.client,family:p.family},86400000);
+            refresh.delete(k);issue(res,b.client_id,p.family);
           } else fail("unsupported_grant_type");
         } else fail("invalid_request",405);
       } catch {if(!res.headersSent)fail();else res.end();}
