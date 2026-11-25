@@ -88,7 +88,11 @@ describe("owner OAuth", () => {
     expect((await post("/oauth/token",exchange)).status).toBe(400);
     expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(405);
     const refresh={grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token};
-    expect((await post("/oauth/token",refresh)).status).toBe(200);
+    const rotated=await post("/oauth/token",refresh);
+    expect(rotated.status).toBe(200);
+    const next=await rotated.json();
     expect((await post("/oauth/token",refresh)).status).toBe(400);
+    expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+next.access_token}})).status).toBe(401);
+    expect((await post("/oauth/token",{...refresh,refresh_token:next.refresh_token})).status).toBe(400);
   });
 });
