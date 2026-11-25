@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createRemoteServer } from "../http.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -128,5 +131,39 @@ describe("OAuth restart behavior", () => {
     expect((await fetch(url+"/oauth/authorize?"+params)).status).toBe(200);
     expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(401);
     expect((await post("/oauth/token",{grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token})).status).toBe(400);
+  });
+  it("persists rotation and replay revocation across restarts", async () => {
+    const dir=mkdtempSync(join(tmpdir(),"terminus-oauth-"));
+    try {
+    const issuer="https://example.test", redirect="https://client.example/callback";
+    const credentials={authToken:"mock",oauthOptions:{issuer,ownerSecret:"s".repeat(48),redirectUris:[redirect],statePath:join(dir,"state.json")}};
+    let url=await start(credentials);
+    const post=(path,data,type="application/x-www-form-urlencoded")=>fetch(url+path,{method:"POST",headers:{"content-type":type},body:type==="application/json"?JSON.stringify(data):new URLSearchParams(data),redirect:"manual"});
+    const register=async()=>{const r=await post("/oauth/register",{redirect_uris:[redirect],token_endpoint_auth_method:"none"},"application/json");expect(r.status).toBe(201);return (await r.json()).client_id;};
+    const client_id=await register();
+    const verifier="v".repeat(64), {createHash}=await import("node:crypto");
+    const params=new URLSearchParams({client_id,redirect_uri:redirect,response_type:"code",code_challenge:createHash("sha256").update(verifier).digest("base64url"),code_challenge_method:"S256"});
+    const page=await fetch(url+"/oauth/authorize?"+params);
+    expect(page.status).toBe(200);
+    const request=(await page.text()).match(/name="request" value="([^"]+)"/)[1];
+    const approved=await post("/oauth/authorize",{request,secret:credentials.oauthOptions.ownerSecret});
+    const code=new URL(approved.headers.get("location")).searchParams.get("code");
+    const exchange=await post("/oauth/token",{grant_type:"authorization_code",client_id,redirect_uri:redirect,code,code_verifier:verifier});
+    expect(exchange.status).toBe(200);
+    const tokens=await exchange.json();
+    server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=undefined;
+    url=await start(credentials);
+    expect(await register()).toBe(client_id);
+    expect((await fetch(url+"/oauth/authorize?"+params)).status).toBe(200);
+    expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+tokens.access_token}})).status).toBe(405);
+    const refresh={grant_type:"refresh_token",client_id,refresh_token:tokens.refresh_token};
+    const rotated=await post("/oauth/token",refresh);expect(rotated.status).toBe(200);const next=await rotated.json();
+    expect(readFileSync(credentials.oauthOptions.statePath,"utf8")).not.toContain(next.refresh_token);
+    server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=undefined;url=await start(credentials);
+    expect((await post("/oauth/token",refresh)).status).toBe(400);
+    server.closeAllConnections();await new Promise(resolve=>server.close(resolve));server=undefined;url=await start(credentials);
+    expect((await fetch(url+"/mcp",{headers:{authorization:"Bearer "+next.access_token}})).status).toBe(401);
+    expect((await post("/oauth/token",{...refresh,refresh_token:next.refresh_token})).status).toBe(400);
+    } finally {rmSync(dir,{recursive:true,force:true});}
   });
 });
