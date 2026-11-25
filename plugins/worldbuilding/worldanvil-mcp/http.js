@@ -3,8 +3,10 @@ import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "./src/server.js";
+import { createOAuth } from "./oauth.js";
 
-export function createRemoteServer({ token, authToken, appKey, toolGroups, serverFactory = createServer } = {}) {
+export function createRemoteServer({ token, authToken, appKey, toolGroups, oauthOptions, serverFactory = createServer } = {}) {
+  const oauth = createOAuth(oauthOptions);
   const configured = typeof token === "string" && token.length >= 32 && Boolean(authToken);
   const expected = configured ? Buffer.from("Bearer " + token) : null;
   const authorized = (value) => {
@@ -29,10 +31,11 @@ export function createRemoteServer({ token, authToken, appKey, toolGroups, serve
     if (path === "/healthz" && ["GET", "HEAD"].includes(req.method)) {
       res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); res.end("ok"); return;
     }
+    if (oauth && await oauth.handle(req, res, path)) return;
     if (path !== "/mcp") return reply(404, "Not found");
-    if (!configured) return reply(503, "MCP unavailable");
-    if (!authorized(req.headers.authorization)) {
-      res.setHeader("WWW-Authenticate", "Bearer");
+    if (!authToken || (!configured && !oauth)) return reply(503, "MCP unavailable");
+    if (!authorized(req.headers.authorization) && !oauth?.authorized(req.headers.authorization)) {
+      res.setHeader("WWW-Authenticate", oauth?.challenge || "Bearer");
       return reply(401, "Unauthorized");
     }
     if (req.headers.origin) return reply(403, "Browser origins are not supported");
@@ -71,6 +74,7 @@ export function createRemoteServer({ token, authToken, appKey, toolGroups, serve
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const server = createRemoteServer({
     token: process.env.MCP_ACCESS_TOKEN,
+    oauthOptions: { statePath: process.env.MCP_OAUTH_STATE_PATH, issuer: process.env.MCP_OAUTH_ISSUER, ownerSecret: process.env.MCP_OAUTH_OWNER_SECRET, redirectUris: (process.env.MCP_OAUTH_REDIRECT_URIS || "").split(",").map(s => s.trim()).filter(Boolean) },
     authToken: process.env.WA_AUTH_TOKEN,
     appKey: process.env.WA_APP_KEY,
     toolGroups: process.env.WA_TOOL_GROUPS,

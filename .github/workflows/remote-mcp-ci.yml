@@ -1,14 +1,19 @@
 name: Remote MCP validation
 on:
   push:
-    branches: [feature/remote-mcp-http]
+    branches: [feature/remote-mcp-http, feature/terminus-oauth]
   pull_request:
-    branches: [main]
+    branches: [main, feature/remote-mcp-http]
+  workflow_dispatch:
+concurrency:
+  group: remote-mcp-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: plugins/worldbuilding/worldanvil-mcp
@@ -20,3 +25,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: docker build -t worldanvil-mcp-test .
+      - name: Smoke test container without credentials
+        run: |
+          docker run -d --name terminus-smoke -p 127.0.0.1:18080:8080 worldanvil-mcp-test
+          trap 'docker rm -f terminus-smoke >/dev/null' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail --max-time 2 http://127.0.0.1:18080/healthz | grep -qx ok; then
+              break
+            fi
+            sleep 1
+          done
+          curl --silent --fail --max-time 2 http://127.0.0.1:18080/healthz | grep -qx ok
+          test "$(curl --silent --max-time 2 --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/mcp)" = 503
